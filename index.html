@@ -55,6 +55,19 @@ body { margin:0; background: var(--bg); color: var(--ink); font-family:'IBM Plex
 .btn-danger:hover { border-color:var(--deficit); color:var(--deficit); }
 
 .add-form { background:var(--surface-2); border:1px dashed var(--line-strong); border-radius:10px; padding:16px; margin:16px 0; }
+.btn-row { display:flex; gap:8px; flex-wrap:wrap; }
+.btn-secondary { background:var(--surface-3); color:var(--brass); border:1px solid var(--brass-dim); border-radius:8px; padding:10px 18px; font-family:'Tajawal',sans-serif; font-weight:700; font-size:13px; cursor:pointer; }
+.btn-secondary:hover { border-color:var(--brass); }
+.import-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:6px; }
+.import-row input[type=file] { font-size:12.5px; color:var(--muted); }
+#importPreview { margin-top:16px; }
+.import-summary { display:flex; gap:16px; align-items:center; margin-bottom:10px; font-size:13px; flex-wrap:wrap; }
+.import-summary .ok { color:var(--surplus); font-weight:600; }
+.import-summary .bad { color:var(--deficit); font-weight:600; }
+.import-table-wrap { max-height:260px; overflow-y:auto; border:1px solid var(--line); border-radius:8px; margin-bottom:12px; }
+.import-table-wrap table { font-size:12px; }
+.import-table-wrap thead th { position:sticky; top:0; background:var(--surface-2); }
+.row-invalid td { opacity:0.55; color:var(--deficit); }
 .form-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:14px; }
 .f-wide { grid-column:span 2; }
 .f-field label { display:block; font-size:11px; color:var(--muted); margin-bottom:5px; }
@@ -231,7 +244,10 @@ tbody tr:hover td { background:var(--surface-2); }
         <h2>التدفقات النقدية الداخلة</h2>
         <p class="panel-sub">تحصيلات من عملاء، تمويل بنكي، إيرادات متوقعة أخرى.</p>
       </div>
-      <button class="btn-primary" id="toggleAddInflow">+ إضافة تدفق داخل</button>
+      <div class="btn-row">
+        <button class="btn-primary" id="toggleAddInflow">+ إضافة تدفق داخل</button>
+        <button class="btn-secondary" id="toggleImportInflow">استيراد من Excel</button>
+      </div>
     </div>
     <div class="add-form hidden" id="addInflowForm">
       <div class="form-grid">
@@ -243,6 +259,18 @@ tbody tr:hover td { background:var(--surface-2); }
       </div>
       <button class="btn-primary" id="saveInflow">حفظ التدفق</button>
     </div>
+
+    <div class="add-form hidden" id="importInflowPanel">
+      <p class="panel-sub" style="margin-bottom:12px;">
+        ارفع ملف Excel أو CSV فيه أعمدة: <b>الاسم</b>، المصدر (اختياري)، <b>المبلغ</b>، <b>التاريخ</b>، ملاحظات (اختياري). ترتيب الأعمدة أو أسماؤها مش لازم تكون مطابقة تمامًا، النظام بيحاول يتعرف عليها تلقائيًا.
+      </p>
+      <div class="import-row">
+        <button class="btn-mini" id="downloadTemplateBtn">تحميل نموذج Excel فارغ</button>
+        <input type="file" id="excelFileInput" accept=".xlsx,.xls,.csv" />
+      </div>
+      <div id="importPreview" class="hidden"></div>
+    </div>
+
     <div class="table-wrap">
       <table>
         <thead><tr><th>الاسم</th><th>المصدر</th><th>التاريخ المتوقع</th><th>المبلغ المتوقع</th><th>المتبقي</th><th>الحالة</th><th></th></tr></thead>
@@ -270,6 +298,7 @@ tbody tr:hover td { background:var(--surface-2); }
   <p class="footer-note">البيانات محفوظة محليًا على هذا الجهاز/المتصفح فقط.</p>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 const MONTHS_AR = ["ينا","فبر","مار","أبر","ماي","يون","يول","أغس","سبت","أكت","نوف","ديس"];
 const COMMIT_TYPES = ["مورد","قسط تمويل","إيجار","رواتب","ضرائب","تأمينات","أخرى"];
@@ -669,6 +698,186 @@ document.getElementById('inflowTbody').addEventListener('click', e=>{
     state.transactions.push({ id: uid(), kind:'تحصيل', refId:id, refName:f.name, amount, date });
     persistAndRenderData();
   }
+});
+
+// ---- Excel import for inflows ----
+const NAME_KEYS = ['اسم','وصف','name','desc'];
+const SOURCE_KEYS = ['مصدر','جهة','source'];
+const AMOUNT_KEYS = ['مبلغ','قيمة','amount','value'];
+const DATE_KEYS = ['تاريخ','date'];
+const NOTES_KEYS = ['ملاحظ','note'];
+
+function findCol(headers, keys){
+  for (let i=0;i<headers.length;i++){
+    const h = String(headers[i]||'').trim().toLowerCase();
+    if (!h) continue;
+    if (keys.some(k=>h.includes(k))) return i;
+  }
+  return -1;
+}
+
+function excelSerialToDate(v){
+  const epoch = new Date(Date.UTC(1899,11,30));
+  const d = new Date(epoch.getTime() + v*86400000);
+  return isNaN(d) ? null : d;
+}
+
+function toISODate(v){
+  if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0,10);
+  if (typeof v === 'number'){
+    const d = excelSerialToDate(v);
+    return d ? d.toISOString().slice(0,10) : null;
+  }
+  if (typeof v === 'string'){
+    const s = v.trim();
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (m) return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+    m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+    if (m) return `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
+    const d = new Date(s);
+    if (!isNaN(d)) return d.toISOString().slice(0,10);
+  }
+  return null;
+}
+
+function toAmountVal(v){
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string'){
+    const cleaned = v.replace(/[^\d.\-]/g,'');
+    const n = parseFloat(cleaned);
+    return isNaN(n) ? null : n;
+  }
+  return null;
+}
+
+let pendingImportRows = [];
+
+function parseWorkbookRows(rows){
+  if (!rows.length) return [];
+  const headers = rows[0];
+  const nameIdx = findCol(headers, NAME_KEYS);
+  const sourceIdx = findCol(headers, SOURCE_KEYS);
+  const amountIdx = findCol(headers, AMOUNT_KEYS);
+  const dateIdx = findCol(headers, DATE_KEYS);
+  const notesIdx = findCol(headers, NOTES_KEYS);
+
+  const out = [];
+  for (let r=1;r<rows.length;r++){
+    const row = rows[r];
+    if (!row || row.every(c=>c==='' || c==null)) continue;
+    const nameRaw = nameIdx>=0 ? row[nameIdx] : row[0];
+    const sourceRaw = sourceIdx>=0 ? row[sourceIdx] : '';
+    const amountRaw = amountIdx>=0 ? row[amountIdx] : row[2];
+    const dateRaw = dateIdx>=0 ? row[dateIdx] : row[3];
+    const notesRaw = notesIdx>=0 ? row[notesIdx] : '';
+
+    const name = String(nameRaw||'').trim();
+    const amount = toAmountVal(amountRaw);
+    const date = toISODate(dateRaw);
+
+    const errors = [];
+    if (!name) errors.push('الاسم فارغ');
+    if (amount==null || amount<=0) errors.push('المبلغ غير صحيح');
+    if (!date) errors.push('التاريخ غير صحيح');
+
+    out.push({
+      name, source: String(sourceRaw||'').trim(), amount, date,
+      notes: String(notesRaw||'').trim(),
+      valid: errors.length===0, errors,
+    });
+  }
+  return out;
+}
+
+function renderImportPreview(rows){
+  pendingImportRows = rows;
+  const validCount = rows.filter(r=>r.valid).length;
+  const invalidCount = rows.length - validCount;
+  const el = document.getElementById('importPreview');
+  el.classList.remove('hidden');
+  const rowsHtml = rows.slice(0,50).map(r=>`
+    <tr class="${r.valid?'':'row-invalid'}">
+      <td>${escapeHtml(r.name)||'—'}</td>
+      <td>${escapeHtml(r.source)||'—'}</td>
+      <td class="num">${r.amount!=null?fmtMoney(r.amount):'—'}</td>
+      <td>${r.date?fmtDateLabel(r.date):'—'}</td>
+      <td>${r.valid?'<span class="badge st-done">صالح</span>':'<span class="badge st-late">'+escapeHtml(r.errors.join('، '))+'</span>'}</td>
+    </tr>`).join('');
+  el.innerHTML = `
+    <div class="import-summary">
+      <span class="ok">${validCount} صف صالح للاستيراد</span>
+      ${invalidCount ? `<span class="bad">${invalidCount} صف به مشكلة (هيتجاهل)</span>` : ''}
+      ${rows.length>50 ? `<span style="color:var(--muted)">(عرض أول 50 من ${rows.length})</span>` : ''}
+    </div>
+    <div class="import-table-wrap">
+      <table>
+        <thead><tr><th>الاسم</th><th>المصدر</th><th>المبلغ</th><th>التاريخ</th><th>الحالة</th></tr></thead>
+        <tbody>${rowsHtml || '<tr><td colspan="5" class="empty">لا توجد صفوف بيانات في الملف</td></tr>'}</tbody>
+      </table>
+    </div>
+    <div class="btn-row">
+      <button class="btn-primary" id="confirmImportBtn" ${validCount===0?'disabled':''}>تأكيد استيراد ${validCount} تدفق</button>
+      <button class="btn-mini" id="cancelImportBtn">إلغاء</button>
+    </div>`;
+
+  document.getElementById('confirmImportBtn').addEventListener('click', ()=>{
+    const valid = pendingImportRows.filter(r=>r.valid);
+    valid.forEach(r=>{
+      state.inflows.push({
+        id: uid(), name: r.name, source: r.source, expectedAmount: r.amount,
+        remainingAmount: r.amount, expectedDate: r.date, notes: r.notes,
+      });
+    });
+    document.getElementById('excelFileInput').value = '';
+    el.classList.add('hidden');
+    el.innerHTML = '';
+    document.getElementById('importInflowPanel').classList.add('hidden');
+    persistAndRenderData();
+  });
+  document.getElementById('cancelImportBtn').addEventListener('click', ()=>{
+    document.getElementById('excelFileInput').value = '';
+    el.classList.add('hidden');
+    el.innerHTML = '';
+  });
+}
+
+document.getElementById('toggleImportInflow').addEventListener('click', ()=>{
+  document.getElementById('addInflowForm').classList.add('hidden');
+  document.getElementById('importInflowPanel').classList.toggle('hidden');
+});
+document.getElementById('toggleAddInflow').addEventListener('click', ()=>{
+  document.getElementById('importInflowPanel').classList.add('hidden');
+});
+
+document.getElementById('downloadTemplateBtn').addEventListener('click', ()=>{
+  const wsData = [
+    ['الاسم','المصدر','المبلغ','التاريخ','ملاحظات'],
+    ['تحصيل من عميل - شركة الفجر','شركة الفجر',15000,'2026-09-15',''],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'تحصيلات');
+  XLSX.writeFile(wb, 'نموذج_تحصيلات.xlsx');
+});
+
+document.getElementById('excelFileInput').addEventListener('change', e=>{
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = evt => {
+    try {
+      const data = new Uint8Array(evt.target.result);
+      const wb = XLSX.read(data, { type:'array', cellDates:true });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header:1, defval:'', raw:true });
+      const parsed = parseWorkbookRows(rows);
+      renderImportPreview(parsed);
+    } catch (err){
+      alert('تعذّر قراءة الملف. تأكد إنه ملف Excel أو CSV صحيح.');
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
 });
 
 renderAll();
