@@ -211,6 +211,10 @@ tbody tr:hover td { background:var(--surface-2); }
       <h3 class="mini-head" style="color:var(--deficit);">تحصيلات متأخرة — فاتت مواعيدها</h3>
       <ul class="mini-list" id="miniLateInflow"></ul>
     </div>
+    <div id="badDateBlock" class="hidden" style="margin-top:20px;">
+      <h3 class="mini-head" style="color:var(--deficit);">⚠️ بنود بتاريخ غير منطقي (متجاهلة من كل الحسابات لحد ما تتصحح)</h3>
+      <ul class="mini-list" id="miniBadDate"></ul>
+    </div>
   </section>
 
   <section class="cf-panel hidden" id="panel-commitments">
@@ -365,11 +369,17 @@ function persistAndRenderData(){
   renderAll();
 }
 
+function isSaneDate(dateStr){
+  if (!dateStr) return false;
+  const y = parseInt(String(dateStr).slice(0,4), 10);
+  return !isNaN(y) && y>=2015 && y<=2045;
+}
+
 function totals(){
   const today = todayStr();
   const totalRemainingCommit = state.commitments.reduce((s,c)=>s+Math.max(0,c.remainingAmount),0);
-  const totalUpcomingInflow = state.inflows.reduce((s,f)=>s+(f.remainingAmount>0 && f.expectedDate>=today ? f.remainingAmount : 0),0);
-  const totalLateInflow = state.inflows.reduce((s,f)=>s+(f.remainingAmount>0 && f.expectedDate<today ? f.remainingAmount : 0),0);
+  const totalUpcomingInflow = state.inflows.reduce((s,f)=>s+(f.remainingAmount>0 && isSaneDate(f.expectedDate) && f.expectedDate>=today ? f.remainingAmount : 0),0);
+  const totalLateInflow = state.inflows.reduce((s,f)=>s+(f.remainingAmount>0 && isSaneDate(f.expectedDate) && f.expectedDate<today ? f.remainingAmount : 0),0);
   const totalPaid = state.transactions.filter(t=>t.kind==='سداد').reduce((s,t)=>s+t.amount,0);
   const totalCollected = state.transactions.filter(t=>t.kind==='تحصيل').reduce((s,t)=>s+t.amount,0);
   const cashBalance = (Number(state.openingBalance)||0) + totalCollected - totalPaid;
@@ -394,11 +404,13 @@ function buildTimeline(cashBalance){
 
 function commitStatus(c){
   if (c.remainingAmount<=0) return {label:'مسدد', cls:'st-done'};
+  if (!isSaneDate(c.dueDate)) return {label:'تاريخ غير صحيح ⚠️', cls:'st-late'};
   if (c.dueDate < todayStr()) return {label:'متأخر', cls:'st-late'};
   return {label:'مستحق', cls:'st-due'};
 }
 function inflowStatus(f){
   if (f.remainingAmount<=0) return {label:'محصّل', cls:'st-done'};
+  if (!isSaneDate(f.expectedDate)) return {label:'تاريخ غير صحيح ⚠️', cls:'st-late'};
   if (f.expectedDate < todayStr()) return {label:'متأخر', cls:'st-late'};
   return {label:'متوقع', cls:'st-due'};
 }
@@ -513,8 +525,9 @@ function renderChart(timeline){
 function renderMiniLists(){
   const today = todayStr();
   const commitList = state.commitments.filter(c=>c.remainingAmount>0).sort((a,b)=>a.dueDate<b.dueDate?-1:1).slice(0,5);
-  const inflowList = state.inflows.filter(f=>f.remainingAmount>0 && f.expectedDate>=today).sort((a,b)=>a.expectedDate<b.expectedDate?-1:1).slice(0,5);
-  const lateList = state.inflows.filter(f=>f.remainingAmount>0 && f.expectedDate<today).sort((a,b)=>a.expectedDate<b.expectedDate?-1:1);
+  const inflowList = state.inflows.filter(f=>f.remainingAmount>0 && isSaneDate(f.expectedDate) && f.expectedDate>=today).sort((a,b)=>a.expectedDate<b.expectedDate?-1:1).slice(0,5);
+  const lateList = state.inflows.filter(f=>f.remainingAmount>0 && isSaneDate(f.expectedDate) && f.expectedDate<today).sort((a,b)=>a.expectedDate<b.expectedDate?-1:1);
+  const badDateList = state.inflows.filter(f=>f.remainingAmount>0 && !isSaneDate(f.expectedDate));
 
   const mc = document.getElementById('miniCommit');
   mc.innerHTML = commitList.length ? commitList.map(c=>`<li><span>${escapeHtml(c.name)}</span><span class="mini-date">${fmtDateLabel(c.dueDate)}</span><span class="neg">${fmtMoney(c.remainingAmount)}</span></li>`).join('') : '<li class="empty">لا توجد التزامات معلقة</li>';
@@ -530,6 +543,18 @@ function renderMiniLists(){
   } else {
     lateBlock.classList.add('hidden');
     ml.innerHTML = '';
+  }
+
+  const badBlock = document.getElementById('badDateBlock');
+  const bd = document.getElementById('miniBadDate');
+  if (badBlock && bd){
+    if (badDateList.length){
+      badBlock.classList.remove('hidden');
+      bd.innerHTML = badDateList.map(f=>`<li><span>${escapeHtml(f.name)}</span><span class="mini-date neg">تاريخ: "${escapeHtml(String(f.expectedDate))}"</span><span class="neg">${fmtMoney(f.remainingAmount)}</span></li>`).join('');
+    } else {
+      badBlock.classList.add('hidden');
+      bd.innerHTML = '';
+    }
   }
 }
 
@@ -770,21 +795,29 @@ function excelSerialToDate(v){
 }
 
 function toISODate(v){
-  if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0,10);
-  if (typeof v === 'number'){
+  let iso = null;
+  if (v instanceof Date && !isNaN(v)) iso = v.toISOString().slice(0,10);
+  else if (typeof v === 'number'){
     const d = excelSerialToDate(v);
-    return d ? d.toISOString().slice(0,10) : null;
-  }
-  if (typeof v === 'string'){
+    iso = d ? d.toISOString().slice(0,10) : null;
+  } else if (typeof v === 'string'){
     const s = v.trim();
     let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-    if (m) return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
-    m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
-    if (m) return `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
-    const d = new Date(s);
-    if (!isNaN(d)) return d.toISOString().slice(0,10);
+    if (m) iso = `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+    else {
+      m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+      if (m) iso = `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
+      else {
+        const d = new Date(s);
+        if (!isNaN(d)) iso = d.toISOString().slice(0,10);
+      }
+    }
   }
-  return null;
+  if (!iso) return null;
+  // رفض أي تاريخ غير منطقي (قبل 2015 أو بعد 2045) بدل ما يتحسب غلط في الفجوات
+  const year = parseInt(iso.slice(0,4), 10);
+  if (isNaN(year) || year < 2015 || year > 2045) return null;
+  return iso;
 }
 
 function toAmountVal(v){
