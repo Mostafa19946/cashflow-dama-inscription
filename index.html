@@ -29,7 +29,7 @@ body { margin:0; background: var(--bg); color: var(--ink); font-family:'IBM Plex
 .cf-balance-input input { background:transparent; border:none; color:var(--brass); font-family:'IBM Plex Mono',monospace; font-size:17px; font-weight:600; width:140px; outline:none; text-align:left; direction:ltr; }
 .cf-balance-input span { color:var(--muted); font-size:12px; }
 
-.cf-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px; }
+.cf-stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(190px,1fr)); gap:14px; margin-bottom:22px; }
 .stat-card { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px 18px; display:flex; flex-direction:column; gap:6px; }
 .stat-alert { border-color:rgba(204,91,66,0.45); background:linear-gradient(180deg, rgba(204,91,66,0.08), var(--surface)); }
 .stat-label { font-size:12px; color:var(--muted); }
@@ -163,9 +163,14 @@ tbody tr:hover td { background:var(--surface-2); }
       <span class="stat-sub" id="statCommitSub">0 بند غير مسدد</span>
     </div>
     <div class="stat-card">
-      <span class="stat-label">تحصيلات متوقعة</span>
+      <span class="stat-label">تحصيلات متوقعة (قادمة)</span>
       <span class="stat-value pos" id="statInflow">0</span>
-      <span class="stat-sub" id="statInflowSub">0 بند غير محصّل</span>
+      <span class="stat-sub" id="statInflowSub">0 بند لسه مستحق</span>
+    </div>
+    <div class="stat-card" id="statLateCard">
+      <span class="stat-label">تحصيلات متأخرة</span>
+      <span class="stat-value neg" id="statLate">0</span>
+      <span class="stat-sub" id="statLateSub">0 بند فات موعده</span>
     </div>
     <div class="stat-card" id="statGapCard">
       <span class="stat-label">أقرب فجوة تمويل</span>
@@ -198,9 +203,13 @@ tbody tr:hover td { background:var(--surface-2); }
         <ul class="mini-list" id="miniCommit"></ul>
       </div>
       <div>
-        <h3 class="mini-head">أقرب 5 تحصيلات متوقعة</h3>
+        <h3 class="mini-head">أقرب 5 تحصيلات متوقعة (قادمة)</h3>
         <ul class="mini-list" id="miniInflow"></ul>
       </div>
+    </div>
+    <div id="lateInflowBlock" class="hidden" style="margin-top:20px;">
+      <h3 class="mini-head" style="color:var(--deficit);">تحصيلات متأخرة — فاتت مواعيدها</h3>
+      <ul class="mini-list" id="miniLateInflow"></ul>
     </div>
   </section>
 
@@ -357,12 +366,14 @@ function persistAndRenderData(){
 }
 
 function totals(){
+  const today = todayStr();
   const totalRemainingCommit = state.commitments.reduce((s,c)=>s+Math.max(0,c.remainingAmount),0);
-  const totalRemainingInflow = state.inflows.reduce((s,f)=>s+Math.max(0,f.remainingAmount),0);
+  const totalUpcomingInflow = state.inflows.reduce((s,f)=>s+(f.remainingAmount>0 && f.expectedDate>=today ? f.remainingAmount : 0),0);
+  const totalLateInflow = state.inflows.reduce((s,f)=>s+(f.remainingAmount>0 && f.expectedDate<today ? f.remainingAmount : 0),0);
   const totalPaid = state.transactions.filter(t=>t.kind==='سداد').reduce((s,t)=>s+t.amount,0);
   const totalCollected = state.transactions.filter(t=>t.kind==='تحصيل').reduce((s,t)=>s+t.amount,0);
   const cashBalance = (Number(state.openingBalance)||0) + totalCollected - totalPaid;
-  return { totalRemainingCommit, totalRemainingInflow, cashBalance };
+  return { totalRemainingCommit, totalUpcomingInflow, totalLateInflow, cashBalance };
 }
 
 function buildTimeline(cashBalance){
@@ -393,7 +404,8 @@ function inflowStatus(f){
 }
 
 function renderStats(){
-  const { totalRemainingCommit, totalRemainingInflow, cashBalance } = totals();
+  const { totalRemainingCommit, totalUpcomingInflow, totalLateInflow, cashBalance } = totals();
+  const today = todayStr();
   const timeline = buildTimeline(cashBalance);
   const firstGap = timeline.find(t=>t.balance<0);
 
@@ -404,8 +416,14 @@ function renderStats(){
   document.getElementById('statCommit').textContent = fmtMoney(totalRemainingCommit);
   document.getElementById('statCommitSub').textContent = state.commitments.filter(c=>c.remainingAmount>0).length + ' بند غير مسدد';
 
-  document.getElementById('statInflow').textContent = fmtMoney(totalRemainingInflow);
-  document.getElementById('statInflowSub').textContent = state.inflows.filter(f=>f.remainingAmount>0).length + ' بند غير محصّل';
+  document.getElementById('statInflow').textContent = fmtMoney(totalUpcomingInflow);
+  document.getElementById('statInflowSub').textContent = state.inflows.filter(f=>f.remainingAmount>0 && f.expectedDate>=today).length + ' بند لسه مستحق';
+
+  const lateCard = document.getElementById('statLateCard');
+  const lateCount = state.inflows.filter(f=>f.remainingAmount>0 && f.expectedDate<today).length;
+  document.getElementById('statLate').textContent = fmtMoney(totalLateInflow);
+  document.getElementById('statLateSub').textContent = lateCount + ' بند فات موعده';
+  lateCard.classList.toggle('stat-alert', lateCount>0);
 
   const gapCard = document.getElementById('statGapCard');
   const gapVal = document.getElementById('statGap');
@@ -493,12 +511,26 @@ function renderChart(timeline){
 }
 
 function renderMiniLists(){
+  const today = todayStr();
   const commitList = state.commitments.filter(c=>c.remainingAmount>0).sort((a,b)=>a.dueDate<b.dueDate?-1:1).slice(0,5);
-  const inflowList = state.inflows.filter(f=>f.remainingAmount>0).sort((a,b)=>a.expectedDate<b.expectedDate?-1:1).slice(0,5);
+  const inflowList = state.inflows.filter(f=>f.remainingAmount>0 && f.expectedDate>=today).sort((a,b)=>a.expectedDate<b.expectedDate?-1:1).slice(0,5);
+  const lateList = state.inflows.filter(f=>f.remainingAmount>0 && f.expectedDate<today).sort((a,b)=>a.expectedDate<b.expectedDate?-1:1);
+
   const mc = document.getElementById('miniCommit');
   mc.innerHTML = commitList.length ? commitList.map(c=>`<li><span>${escapeHtml(c.name)}</span><span class="mini-date">${fmtDateLabel(c.dueDate)}</span><span class="neg">${fmtMoney(c.remainingAmount)}</span></li>`).join('') : '<li class="empty">لا توجد التزامات معلقة</li>';
+
   const mi = document.getElementById('miniInflow');
-  mi.innerHTML = inflowList.length ? inflowList.map(f=>`<li><span>${escapeHtml(f.name)}</span><span class="mini-date">${fmtDateLabel(f.expectedDate)}</span><span class="pos">${fmtMoney(f.remainingAmount)}</span></li>`).join('') : '<li class="empty">لا توجد تحصيلات معلقة</li>';
+  mi.innerHTML = inflowList.length ? inflowList.map(f=>`<li><span>${escapeHtml(f.name)}</span><span class="mini-date">${fmtDateLabel(f.expectedDate)}</span><span class="pos">${fmtMoney(f.remainingAmount)}</span></li>`).join('') : '<li class="empty">لا توجد تحصيلات قادمة معلقة</li>';
+
+  const lateBlock = document.getElementById('lateInflowBlock');
+  const ml = document.getElementById('miniLateInflow');
+  if (lateList.length){
+    lateBlock.classList.remove('hidden');
+    ml.innerHTML = lateList.map(f=>`<li><span>${escapeHtml(f.name)}</span><span class="mini-date neg">${fmtDateLabel(f.expectedDate)}</span><span class="neg">${fmtMoney(f.remainingAmount)}</span></li>`).join('');
+  } else {
+    lateBlock.classList.add('hidden');
+    ml.innerHTML = '';
+  }
 }
 
 function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
