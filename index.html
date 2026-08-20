@@ -68,6 +68,9 @@ body { margin:0; background: var(--bg); color: var(--ink); font-family:'IBM Plex
 .import-table-wrap table { font-size:12px; }
 .import-table-wrap thead th { position:sticky; top:0; background:var(--surface-2); }
 .row-invalid td { opacity:0.55; color:var(--deficit); }
+.bulk-bar { display:flex; align-items:center; gap:12px; background:var(--deficit-dim); border:1px solid rgba(204,91,66,0.4); border-radius:8px; padding:10px 14px; margin-top:14px; font-size:13px; }
+.bulk-bar span { color:var(--deficit); font-weight:600; }
+input[type=checkbox] { width:16px; height:16px; accent-color:var(--brass); cursor:pointer; }
 .form-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:14px; }
 .f-wide { grid-column:span 2; }
 .f-field label { display:block; font-size:11px; color:var(--muted); margin-bottom:5px; }
@@ -258,9 +261,15 @@ tbody tr:hover td { background:var(--surface-2); }
       <div id="importPreviewCommit" class="hidden"></div>
     </div>
 
+    <div id="bulkBarCommit" class="bulk-bar hidden">
+      <span id="bulkCountCommit">0 محدد</span>
+      <button class="btn-mini btn-danger" id="bulkDeleteCommit">حذف المحدد</button>
+      <button class="btn-mini" id="bulkClearCommit">إلغاء التحديد</button>
+    </div>
+
     <div class="table-wrap">
       <table>
-        <thead><tr><th>الاسم</th><th>النوع</th><th>الاستحقاق</th><th>الإجمالي</th><th>المتبقي</th><th>الحالة</th><th></th></tr></thead>
+        <thead><tr><th style="width:30px;"><input type="checkbox" id="commitSelectAll" /></th><th>الاسم</th><th>النوع</th><th>الاستحقاق</th><th>الإجمالي</th><th>المتبقي</th><th>الحالة</th><th></th></tr></thead>
         <tbody id="commitTbody"></tbody>
       </table>
     </div>
@@ -299,9 +308,15 @@ tbody tr:hover td { background:var(--surface-2); }
       <div id="importPreview" class="hidden"></div>
     </div>
 
+    <div id="bulkBarInflow" class="bulk-bar hidden">
+      <span id="bulkCountInflow">0 محدد</span>
+      <button class="btn-mini btn-danger" id="bulkDeleteInflow">حذف المحدد</button>
+      <button class="btn-mini" id="bulkClearInflow">إلغاء التحديد</button>
+    </div>
+
     <div class="table-wrap">
       <table>
-        <thead><tr><th>الاسم</th><th>المصدر</th><th>التاريخ المتوقع</th><th>المبلغ المتوقع</th><th>المتبقي</th><th>الحالة</th><th></th></tr></thead>
+        <thead><tr><th style="width:30px;"><input type="checkbox" id="inflowSelectAll" /></th><th>الاسم</th><th>المصدر</th><th>التاريخ المتوقع</th><th>المبلغ المتوقع</th><th>المتبقي</th><th>الحالة</th><th></th></tr></thead>
         <tbody id="inflowTbody"></tbody>
       </table>
     </div>
@@ -311,7 +326,7 @@ tbody tr:hover td { background:var(--surface-2); }
     <div class="panel-head row-between">
       <div>
         <h2>سجل الحركة الفعلية</h2>
-        <p class="panel-sub">كل عمليات السداد والتحصيل المسجّلة، مجمّعة حسب الفترة.</p>
+        <p class="panel-sub">مقارنة الوارد (تحصيل) بالصادر (سداد) والفرق بينهم، حسب الفترة.</p>
       </div>
       <div class="period-switch">
         <button class="active" data-period="day">يومي</button>
@@ -320,6 +335,15 @@ tbody tr:hover td { background:var(--surface-2); }
         <button data-period="year">سنوي</button>
       </div>
     </div>
+
+    <div class="chart-box" id="compareChartBox"></div>
+    <div class="legend-row">
+      <span><i class="dot" style="background:#4FA579"></i> الوارد (تحصيل)</span>
+      <span><i class="dot" style="background:#CC5B42"></i> الصادر (سداد)</span>
+    </div>
+    <div id="compareSummary" class="import-summary" style="margin-top:12px;"></div>
+    <div class="ledger-divider"></div>
+
     <div class="ledger-groups" id="ledgerGroups"></div>
   </section>
 
@@ -359,6 +383,8 @@ let state = {
   openingBalance: load('openingBalance', 0),
   tab: 'overview',
   period: 'month',
+  selectedCommitIds: new Set(),
+  selectedInflowIds: new Set(),
 };
 
 function persistAndRenderData(){
@@ -563,10 +589,12 @@ function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s||
 function renderCommitTable(){
   const tbody = document.getElementById('commitTbody');
   const rows = state.commitments.slice().sort((a,b)=>a.dueDate<b.dueDate?-1:1);
-  if (!rows.length){ tbody.innerHTML = '<tr><td colspan="7" class="empty">لا توجد التزامات مسجّلة بعد</td></tr>'; return; }
+  if (!rows.length){ tbody.innerHTML = '<tr><td colspan="8" class="empty">لا توجد التزامات مسجّلة بعد</td></tr>'; renderBulkBar('commit'); return; }
   tbody.innerHTML = rows.map(c=>{
     const st = commitStatus(c);
+    const checked = state.selectedCommitIds.has(c.id) ? 'checked' : '';
     return `<tr>
+      <td><input type="checkbox" class="commit-checkbox" data-id="${c.id}" ${checked} /></td>
       <td>${escapeHtml(c.name)}${c.notes?`<div class="td-note">${escapeHtml(c.notes)}</div>`:''}</td>
       <td>${escapeHtml(c.type)}</td>
       <td style="direction:ltr; text-align:left;">${fmtDateLabel(c.dueDate)}</td>
@@ -579,7 +607,7 @@ function renderCommitTable(){
       </td>
     </tr>
     <tr class="pay-row hidden" id="payrow-${c.id}">
-      <td colspan="7">
+      <td colspan="8">
         <div class="pay-inline">
           <label>المبلغ المسدد</label>
           <input type="number" class="pay-amount" data-id="${c.id}" value="${c.remainingAmount}" />
@@ -590,15 +618,19 @@ function renderCommitTable(){
       </td>
     </tr>`;
   }).join('');
+  document.getElementById('commitSelectAll').checked = rows.length>0 && rows.every(c=>state.selectedCommitIds.has(c.id));
+  renderBulkBar('commit');
 }
 
 function renderInflowTable(){
   const tbody = document.getElementById('inflowTbody');
   const rows = state.inflows.slice().sort((a,b)=>a.expectedDate<b.expectedDate?-1:1);
-  if (!rows.length){ tbody.innerHTML = '<tr><td colspan="7" class="empty">لا توجد تدفقات داخلة مسجّلة بعد</td></tr>'; return; }
+  if (!rows.length){ tbody.innerHTML = '<tr><td colspan="8" class="empty">لا توجد تدفقات داخلة مسجّلة بعد</td></tr>'; renderBulkBar('inflow'); return; }
   tbody.innerHTML = rows.map(f=>{
     const st = inflowStatus(f);
+    const checked = state.selectedInflowIds.has(f.id) ? 'checked' : '';
     return `<tr>
+      <td><input type="checkbox" class="inflow-checkbox" data-id="${f.id}" ${checked} /></td>
       <td>${escapeHtml(f.name)}${f.notes?`<div class="td-note">${escapeHtml(f.notes)}</div>`:''}</td>
       <td>${escapeHtml(f.source)||'—'}</td>
       <td style="direction:ltr; text-align:left;">${fmtDateLabel(f.expectedDate)}</td>
@@ -611,7 +643,7 @@ function renderInflowTable(){
       </td>
     </tr>
     <tr class="pay-row hidden" id="collectrow-${f.id}">
-      <td colspan="7">
+      <td colspan="8">
         <div class="pay-inline">
           <label>المبلغ المحصّل</label>
           <input type="number" class="collect-amount" data-id="${f.id}" value="${f.remainingAmount}" />
@@ -622,6 +654,8 @@ function renderInflowTable(){
       </td>
     </tr>`;
   }).join('');
+  document.getElementById('inflowSelectAll').checked = rows.length>0 && rows.every(f=>state.selectedInflowIds.has(f.id));
+  renderBulkBar('inflow');
 }
 
 function renderLedger(){
@@ -634,6 +668,9 @@ function renderLedger(){
     g.items.push(t);
   }
   const groups = Array.from(map.values()).sort((a,b)=>a.key<b.key?1:-1);
+
+  renderCompareChart(groups, state.period);
+
   const el = document.getElementById('ledgerGroups');
   if (!groups.length){ el.innerHTML = '<p class="empty">لا توجد حركات مسجّلة بعد. سجّل سداد أو تحصيل ليظهر هنا.</p>'; return; }
   el.innerHTML = groups.map(g=>`
@@ -656,6 +693,75 @@ function renderLedger(){
           </tr>`).join('')}
       </tbody></table>
     </div>`).join('');
+}
+
+const COMPARE_MAX_BARS = { day:30, week:16, month:12, year:8 };
+
+function renderCompareChart(groupsDesc, period){
+  const chartBox = document.getElementById('compareChartBox');
+  const summaryEl = document.getElementById('compareSummary');
+  if (!groupsDesc.length){
+    chartBox.innerHTML = '<p class="empty">لا توجد بيانات كافية لعرض المقارنة بعد.</p>';
+    summaryEl.innerHTML = '';
+    return;
+  }
+
+  const maxBars = COMPARE_MAX_BARS[period] || 12;
+  const asc = groupsDesc.slice(0, maxBars).slice().reverse();
+
+  const totalCollected = asc.reduce((s,g)=>s+g.collected,0);
+  const totalPaid = asc.reduce((s,g)=>s+g.paid,0);
+  const totalDiff = totalCollected - totalPaid;
+  summaryEl.innerHTML = `
+    <span class="ok">إجمالي الوارد: ${fmtMoney(totalCollected)}</span>
+    <span class="bad">إجمالي الصادر: ${fmtMoney(totalPaid)}</span>
+    <span style="color:${totalDiff>=0?'var(--surplus)':'var(--deficit)'}; font-weight:600;">الفرق: ${totalDiff>=0?'+':''}${fmtMoney(totalDiff)}</span>
+    ${groupsDesc.length>maxBars ? `<span style="color:var(--muted)">(آخر ${maxBars} فترة معروضة في الرسم)</span>` : ''}
+  `;
+
+  const W=960,H=280,mL=54,mR=16,mT=20,mB=40;
+  const innerW=W-mL-mR, innerH=H-mT-mB;
+  const n = asc.length;
+  const maxVal = Math.max(1, ...asc.map(g=>Math.max(g.collected,g.paid)));
+  const groupW = innerW / n;
+  const barW = Math.min(22, groupW*0.32);
+  const yScale = v => mT + innerH - (v/maxVal)*innerH;
+  const baseY = mT + innerH;
+
+  let bars = '';
+  let ticks = '';
+  asc.forEach((g,i)=>{
+    const cx = mL + i*groupW + groupW/2;
+    const x1 = cx - barW - 2;
+    const x2 = cx + 2;
+    const y1 = yScale(g.collected);
+    const y2 = yScale(g.paid);
+    bars += `<rect x="${x1.toFixed(1)}" y="${y1.toFixed(1)}" width="${barW}" height="${(baseY-y1).toFixed(1)}" fill="#4FA579" rx="2" />`;
+    bars += `<rect x="${x2.toFixed(1)}" y="${y2.toFixed(1)}" width="${barW}" height="${(baseY-y2).toFixed(1)}" fill="#CC5B42" rx="2" />`;
+    ticks += `<text x="${cx.toFixed(1)}" y="${H-14}" fill="#90998F" font-size="10" text-anchor="middle" font-family="IBM Plex Mono, monospace">${escapeHtml(periodLabel(g.key, period).slice(0,10))}</text>`;
+  });
+
+  const svg = `
+  <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="direction:ltr">
+    <line x1="${mL}" y1="${baseY.toFixed(1)}" x2="${W-mR}" y2="${baseY.toFixed(1)}" stroke="rgba(236,231,216,0.2)" stroke-width="1" />
+    ${bars}
+    ${ticks}
+  </svg>`;
+  chartBox.innerHTML = svg;
+}
+
+function renderBulkBar(kind){
+  if (kind==='commit'){
+    const bar = document.getElementById('bulkBarCommit');
+    const n = state.selectedCommitIds.size;
+    bar.classList.toggle('hidden', n===0);
+    document.getElementById('bulkCountCommit').textContent = n + ' محدد';
+  } else {
+    const bar = document.getElementById('bulkBarInflow');
+    const n = state.selectedInflowIds.size;
+    bar.classList.toggle('hidden', n===0);
+    document.getElementById('bulkCountInflow').textContent = n + ' محدد';
+  }
 }
 
 function renderAll(){
@@ -738,6 +844,7 @@ document.getElementById('commitTbody').addEventListener('click', e=>{
     document.getElementById('payrow-'+t.dataset.id).classList.toggle('hidden');
   } else if (t.classList.contains('del-commit')){
     state.commitments = state.commitments.filter(c=>c.id!==t.dataset.id);
+    state.selectedCommitIds.delete(t.dataset.id);
     persistAndRenderData();
   } else if (t.classList.contains('pay-confirm')){
     const id = t.dataset.id;
@@ -751,6 +858,31 @@ document.getElementById('commitTbody').addEventListener('click', e=>{
     persistAndRenderData();
   }
 });
+document.getElementById('commitTbody').addEventListener('change', e=>{
+  const t = e.target;
+  if (t.classList.contains('commit-checkbox')){
+    if (t.checked) state.selectedCommitIds.add(t.dataset.id); else state.selectedCommitIds.delete(t.dataset.id);
+    renderBulkBar('commit');
+    document.getElementById('commitSelectAll').checked = state.commitments.length>0 && state.commitments.every(c=>state.selectedCommitIds.has(c.id));
+  }
+});
+document.getElementById('commitSelectAll').addEventListener('change', e=>{
+  if (e.target.checked) state.commitments.forEach(c=>state.selectedCommitIds.add(c.id));
+  else state.selectedCommitIds.clear();
+  renderCommitTable();
+});
+document.getElementById('bulkClearCommit').addEventListener('click', ()=>{
+  state.selectedCommitIds.clear();
+  renderCommitTable();
+});
+document.getElementById('bulkDeleteCommit').addEventListener('click', ()=>{
+  const n = state.selectedCommitIds.size;
+  if (!n) return;
+  if (!confirm(`متأكد إنك عايز تحذف ${n} التزام محدد؟ الإجراء ده مش قابل للتراجع.`)) return;
+  state.commitments = state.commitments.filter(c=>!state.selectedCommitIds.has(c.id));
+  state.selectedCommitIds.clear();
+  persistAndRenderData();
+});
 
 document.getElementById('inflowTbody').addEventListener('click', e=>{
   const t = e.target;
@@ -758,6 +890,7 @@ document.getElementById('inflowTbody').addEventListener('click', e=>{
     document.getElementById('collectrow-'+t.dataset.id).classList.toggle('hidden');
   } else if (t.classList.contains('del-inflow')){
     state.inflows = state.inflows.filter(f=>f.id!==t.dataset.id);
+    state.selectedInflowIds.delete(t.dataset.id);
     persistAndRenderData();
   } else if (t.classList.contains('collect-confirm')){
     const id = t.dataset.id;
@@ -770,6 +903,31 @@ document.getElementById('inflowTbody').addEventListener('click', e=>{
     state.transactions.push({ id: uid(), kind:'تحصيل', refId:id, refName:f.name, amount, date });
     persistAndRenderData();
   }
+});
+document.getElementById('inflowTbody').addEventListener('change', e=>{
+  const t = e.target;
+  if (t.classList.contains('inflow-checkbox')){
+    if (t.checked) state.selectedInflowIds.add(t.dataset.id); else state.selectedInflowIds.delete(t.dataset.id);
+    renderBulkBar('inflow');
+    document.getElementById('inflowSelectAll').checked = state.inflows.length>0 && state.inflows.every(f=>state.selectedInflowIds.has(f.id));
+  }
+});
+document.getElementById('inflowSelectAll').addEventListener('change', e=>{
+  if (e.target.checked) state.inflows.forEach(f=>state.selectedInflowIds.add(f.id));
+  else state.selectedInflowIds.clear();
+  renderInflowTable();
+});
+document.getElementById('bulkClearInflow').addEventListener('click', ()=>{
+  state.selectedInflowIds.clear();
+  renderInflowTable();
+});
+document.getElementById('bulkDeleteInflow').addEventListener('click', ()=>{
+  const n = state.selectedInflowIds.size;
+  if (!n) return;
+  if (!confirm(`متأكد إنك عايز تحذف ${n} تدفق محدد؟ الإجراء ده مش قابل للتراجع.`)) return;
+  state.inflows = state.inflows.filter(f=>!state.selectedInflowIds.has(f.id));
+  state.selectedInflowIds.clear();
+  persistAndRenderData();
 });
 
 // ---- Excel import for inflows ----
