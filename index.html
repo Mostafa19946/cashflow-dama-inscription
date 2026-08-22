@@ -98,6 +98,7 @@ tbody tr:hover td { background:var(--surface-2); }
 .st-due { background:var(--brass-dim); color:var(--brass); }
 
 .pay-row td { background:var(--surface-2); padding:12px 10px; }
+.edit-row td { background:var(--surface-2); padding:14px 10px; border-top:2px solid var(--brass-dim); }
 .pay-inline { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .pay-inline label { font-size:11px; color:var(--muted); }
 .pay-inline input { background:var(--surface-3); border:1px solid var(--line-strong); color:var(--ink); border-radius:6px; padding:6px 9px; font-size:12.5px; font-family:'IBM Plex Mono',monospace; }
@@ -614,6 +615,8 @@ function renderMiniLists(){
 }
 
 function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+function escapeAttr(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function optionsHtml(list, current){ return list.map(o=>`<option value="${escapeAttr(o)}" ${o===current?'selected':''}>${escapeHtml(o)}</option>`).join(''); }
 
 const PAGE_SIZE = 50;
 
@@ -648,6 +651,7 @@ function renderCommitTable(){
       <td><span class="badge ${st.cls}">${st.label}</span></td>
       <td class="actions">
         ${c.remainingAmount>0 ? `<button class="btn-mini pay-toggle" data-id="${c.id}">تسجيل سداد</button>` : ''}
+        <button class="btn-mini edit-toggle-commit" data-id="${c.id}">تعديل</button>
         <button class="btn-mini btn-danger del-commit" data-id="${c.id}">حذف</button>
       </td>
     </tr>
@@ -659,6 +663,23 @@ function renderCommitTable(){
           <label>تاريخ السداد</label>
           <input type="date" class="pay-date" data-id="${c.id}" value="${todayStr()}" />
           <button class="btn-primary btn-sm pay-confirm" data-id="${c.id}">تأكيد السداد</button>
+        </div>
+      </td>
+    </tr>
+    <tr class="edit-row hidden" id="editrow-commit-${c.id}">
+      <td colspan="8">
+        <div class="form-grid">
+          <div class="f-field"><label>اسم الالتزام</label><input type="text" class="edit-name" data-id="${c.id}" value="${escapeAttr(c.name)}" /></div>
+          <div class="f-field"><label>النوع</label><select class="edit-type" data-id="${c.id}">${optionsHtml(COMMIT_TYPES, c.type)}</select></div>
+          <div class="f-field"><label>القيمة الإجمالية</label><input type="number" class="edit-total" data-id="${c.id}" value="${c.totalAmount}" /></div>
+          <div class="f-field"><label>المتبقي</label><input type="number" class="edit-remaining" data-id="${c.id}" value="${c.remainingAmount}" /></div>
+          <div class="f-field"><label>تاريخ الاستحقاق</label><input type="date" class="edit-date" data-id="${c.id}" value="${c.dueDate}" /></div>
+          <div class="f-field"><label>التكرار</label><select class="edit-recurrence" data-id="${c.id}">${optionsHtml(['مرة واحدة','شهري','ربع سنوي','سنوي'], c.recurrence)}</select></div>
+          <div class="f-field f-wide"><label>ملاحظات</label><input type="text" class="edit-notes" data-id="${c.id}" value="${escapeAttr(c.notes)}" /></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn-primary btn-sm edit-save-commit" data-id="${c.id}">حفظ التعديل</button>
+          <button class="btn-mini edit-cancel-commit" data-id="${c.id}">إلغاء</button>
         </div>
       </td>
     </tr>`;
@@ -699,6 +720,7 @@ function renderInflowTable(){
       <td><span class="badge ${st.cls}">${st.label}</span></td>
       <td class="actions">
         ${f.remainingAmount>0 ? `<button class="btn-mini collect-toggle" data-id="${f.id}">تسجيل تحصيل</button>` : ''}
+        <button class="btn-mini edit-toggle-inflow" data-id="${f.id}">تعديل</button>
         <button class="btn-mini btn-danger del-inflow" data-id="${f.id}">حذف</button>
       </td>
     </tr>
@@ -710,6 +732,22 @@ function renderInflowTable(){
           <label>تاريخ التحصيل</label>
           <input type="date" class="collect-date" data-id="${f.id}" value="${todayStr()}" />
           <button class="btn-primary btn-sm collect-confirm" data-id="${f.id}">تأكيد التحصيل</button>
+        </div>
+      </td>
+    </tr>
+    <tr class="edit-row hidden" id="editrow-inflow-${f.id}">
+      <td colspan="8">
+        <div class="form-grid">
+          <div class="f-field"><label>الاسم / الوصف</label><input type="text" class="edit-name" data-id="${f.id}" value="${escapeAttr(f.name)}" /></div>
+          <div class="f-field"><label>الجهة / المصدر</label><input type="text" class="edit-source" data-id="${f.id}" value="${escapeAttr(f.source)}" /></div>
+          <div class="f-field"><label>المبلغ المتوقع</label><input type="number" class="edit-expected" data-id="${f.id}" value="${f.expectedAmount}" /></div>
+          <div class="f-field"><label>المتبقي</label><input type="number" class="edit-remaining" data-id="${f.id}" value="${f.remainingAmount}" /></div>
+          <div class="f-field"><label>التاريخ المتوقع</label><input type="date" class="edit-date" data-id="${f.id}" value="${f.expectedDate}" /></div>
+          <div class="f-field f-wide"><label>ملاحظات</label><input type="text" class="edit-notes" data-id="${f.id}" value="${escapeAttr(f.notes)}" /></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn-primary btn-sm edit-save-inflow" data-id="${f.id}">حفظ التعديل</button>
+          <button class="btn-mini edit-cancel-inflow" data-id="${f.id}">إلغاء</button>
         </div>
       </td>
     </tr>`;
@@ -915,6 +953,7 @@ document.getElementById('commitTbody').addEventListener('click', e=>{
   if (t.classList.contains('pay-toggle')){
     document.getElementById('payrow-'+t.dataset.id).classList.toggle('hidden');
   } else if (t.classList.contains('del-commit')){
+    if (!confirm('متأكد إنك عايز تحذف الالتزام ده؟')) return;
     state.commitments = state.commitments.filter(c=>c.id!==t.dataset.id);
     state.selectedCommitIds.delete(t.dataset.id);
     persistAndRenderData();
@@ -927,6 +966,27 @@ document.getElementById('commitTbody').addEventListener('click', e=>{
     if (!c) return;
     c.remainingAmount = Math.max(0, +(c.remainingAmount-amount).toFixed(2));
     state.transactions.push({ id: uid(), kind:'سداد', refId:id, refName:c.name, amount, date });
+    persistAndRenderData();
+  } else if (t.classList.contains('edit-toggle-commit')){
+    document.getElementById('editrow-commit-'+t.dataset.id).classList.toggle('hidden');
+  } else if (t.classList.contains('edit-cancel-commit')){
+    document.getElementById('editrow-commit-'+t.dataset.id).classList.add('hidden');
+  } else if (t.classList.contains('edit-save-commit')){
+    const id = t.dataset.id;
+    const name = document.querySelector(`.edit-name[data-id="${id}"]`).value.trim();
+    const type = document.querySelector(`.edit-type[data-id="${id}"]`).value;
+    const total = parseFloat(document.querySelector(`.edit-total[data-id="${id}"]`).value);
+    const remaining = parseFloat(document.querySelector(`.edit-remaining[data-id="${id}"]`).value);
+    const dueDate = document.querySelector(`.edit-date[data-id="${id}"]`).value;
+    const recurrence = document.querySelector(`.edit-recurrence[data-id="${id}"]`).value;
+    const notes = document.querySelector(`.edit-notes[data-id="${id}"]`).value.trim();
+    if (!name || isNaN(total) || total<=0 || isNaN(remaining) || remaining<0 || !dueDate){
+      alert('تأكد إن الاسم والقيمة الإجمالية والمتبقي والتاريخ كلها مكتوبة صح.');
+      return;
+    }
+    const c = state.commitments.find(c=>c.id===id);
+    if (!c) return;
+    Object.assign(c, { name, type, totalAmount: total, remainingAmount: remaining, dueDate, recurrence, notes });
     persistAndRenderData();
   }
 });
@@ -961,6 +1021,7 @@ document.getElementById('inflowTbody').addEventListener('click', e=>{
   if (t.classList.contains('collect-toggle')){
     document.getElementById('collectrow-'+t.dataset.id).classList.toggle('hidden');
   } else if (t.classList.contains('del-inflow')){
+    if (!confirm('متأكد إنك عايز تحذف التدفق ده؟')) return;
     state.inflows = state.inflows.filter(f=>f.id!==t.dataset.id);
     state.selectedInflowIds.delete(t.dataset.id);
     persistAndRenderData();
@@ -973,6 +1034,26 @@ document.getElementById('inflowTbody').addEventListener('click', e=>{
     if (!f) return;
     f.remainingAmount = Math.max(0, +(f.remainingAmount-amount).toFixed(2));
     state.transactions.push({ id: uid(), kind:'تحصيل', refId:id, refName:f.name, amount, date });
+    persistAndRenderData();
+  } else if (t.classList.contains('edit-toggle-inflow')){
+    document.getElementById('editrow-inflow-'+t.dataset.id).classList.toggle('hidden');
+  } else if (t.classList.contains('edit-cancel-inflow')){
+    document.getElementById('editrow-inflow-'+t.dataset.id).classList.add('hidden');
+  } else if (t.classList.contains('edit-save-inflow')){
+    const id = t.dataset.id;
+    const name = document.querySelector(`.edit-name[data-id="${id}"]`).value.trim();
+    const source = document.querySelector(`.edit-source[data-id="${id}"]`).value.trim();
+    const expected = parseFloat(document.querySelector(`.edit-expected[data-id="${id}"]`).value);
+    const remaining = parseFloat(document.querySelector(`.edit-remaining[data-id="${id}"]`).value);
+    const expectedDate = document.querySelector(`.edit-date[data-id="${id}"]`).value;
+    const notes = document.querySelector(`.edit-notes[data-id="${id}"]`).value.trim();
+    if (!name || isNaN(expected) || expected<=0 || isNaN(remaining) || remaining<0 || !expectedDate){
+      alert('تأكد إن الاسم والمبلغ المتوقع والمتبقي والتاريخ كلها مكتوبة صح.');
+      return;
+    }
+    const f = state.inflows.find(f=>f.id===id);
+    if (!f) return;
+    Object.assign(f, { name, source, expectedAmount: expected, remainingAmount: remaining, expectedDate, notes });
     persistAndRenderData();
   }
 });
