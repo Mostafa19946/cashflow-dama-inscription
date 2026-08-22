@@ -72,6 +72,9 @@ body { margin:0; background: var(--bg); color: var(--ink); font-family:'IBM Plex
 .bulk-bar span { color:var(--deficit); font-weight:600; }
 .pager { display:flex; align-items:center; justify-content:center; gap:14px; margin-top:14px; font-size:12.5px; color:var(--muted); }
 .pager button:disabled { opacity:0.35; cursor:not-allowed; }
+.search-row { margin-top:12px; }
+.search-row input { width:100%; max-width:340px; background:var(--surface-2); border:1px solid var(--line-strong); color:var(--ink); border-radius:8px; padding:9px 12px; font-size:13px; font-family:'IBM Plex Sans Arabic',sans-serif; outline:none; }
+.search-row input:focus { border-color:var(--brass); }
 input[type=checkbox] { width:16px; height:16px; accent-color:var(--brass); cursor:pointer; }
 .form-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:14px; }
 .f-wide { grid-column:span 2; }
@@ -234,6 +237,9 @@ tbody tr:hover td { background:var(--surface-2); }
         <button class="btn-mini btn-danger" id="clearAllCommits" style="align-self:center;">🗑️ حذف كل الالتزامات</button>
       </div>
     </div>
+    <div class="search-row">
+      <input type="text" id="commitSearchInput" placeholder="🔍 ابحث بالاسم..." />
+    </div>
     <div class="add-form hidden" id="addCommitForm">
       <div class="form-grid">
         <div class="f-field"><label>اسم الالتزام</label><input id="cName" placeholder="مثال: مورد الخامات - شركة النور" /></div>
@@ -290,6 +296,9 @@ tbody tr:hover td { background:var(--surface-2); }
         <button class="btn-secondary" id="toggleImportInflow">استيراد من Excel</button>
         <button class="btn-mini btn-danger" id="clearAllInflows" style="align-self:center;">🗑️ حذف كل التحصيلات</button>
       </div>
+    </div>
+    <div class="search-row">
+      <input type="text" id="inflowSearchInput" placeholder="🔍 ابحث بالاسم..." />
     </div>
     <div class="add-form hidden" id="addInflowForm">
       <div class="form-grid">
@@ -393,6 +402,8 @@ let state = {
   selectedInflowIds: new Set(),
   commitPage: 0,
   inflowPage: 0,
+  commitSearch: '',
+  inflowSearch: '',
 };
 
 function persistAndRenderData(){
@@ -608,9 +619,13 @@ const PAGE_SIZE = 50;
 
 function renderCommitTable(){
   const tbody = document.getElementById('commitTbody');
-  const allRows = state.commitments.slice().sort((a,b)=>a.dueDate<b.dueDate?-1:1);
+  let allRows = state.commitments.slice().sort((a,b)=>a.dueDate<b.dueDate?-1:1);
+  if (state.commitSearch.trim()){
+    const q = state.commitSearch.trim().toLowerCase();
+    allRows = allRows.filter(c=>c.name.toLowerCase().includes(q));
+  }
   if (!allRows.length){
-    tbody.innerHTML = '<tr><td colspan="8" class="empty">لا توجد التزامات مسجّلة بعد</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="8" class="empty">${state.commitSearch.trim() ? 'مفيش نتائج مطابقة للبحث' : 'لا توجد التزامات مسجّلة بعد'}</td></tr>`;
     renderBulkBar('commit');
     renderPager('commit', 0, 0);
     return;
@@ -655,9 +670,13 @@ function renderCommitTable(){
 
 function renderInflowTable(){
   const tbody = document.getElementById('inflowTbody');
-  const allRows = state.inflows.slice().sort((a,b)=>a.expectedDate<b.expectedDate?-1:1);
+  let allRows = state.inflows.slice().sort((a,b)=>a.expectedDate<b.expectedDate?-1:1);
+  if (state.inflowSearch.trim()){
+    const q = state.inflowSearch.trim().toLowerCase();
+    allRows = allRows.filter(f=>f.name.toLowerCase().includes(q));
+  }
   if (!allRows.length){
-    tbody.innerHTML = '<tr><td colspan="8" class="empty">لا توجد تدفقات داخلة مسجّلة بعد</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="8" class="empty">${state.inflowSearch.trim() ? 'مفيش نتائج مطابقة للبحث' : 'لا توجد تدفقات داخلة مسجّلة بعد'}</td></tr>`;
     renderBulkBar('inflow');
     renderPager('inflow', 0, 0);
     return;
@@ -1010,6 +1029,17 @@ document.getElementById('pagerInflow').addEventListener('click', e=>{
   const t = e.target;
   if (t.classList.contains('pager-prev')){ state.inflowPage--; renderInflowTable(); }
   else if (t.classList.contains('pager-next')){ state.inflowPage++; renderInflowTable(); }
+});
+
+document.getElementById('commitSearchInput').addEventListener('input', e=>{
+  state.commitSearch = e.target.value;
+  state.commitPage = 0;
+  renderCommitTable();
+});
+document.getElementById('inflowSearchInput').addEventListener('input', e=>{
+  state.inflowSearch = e.target.value;
+  state.inflowPage = 0;
+  renderInflowTable();
 });
 
 // ---- Excel import for inflows ----
