@@ -70,6 +70,8 @@ body { margin:0; background: var(--bg); color: var(--ink); font-family:'IBM Plex
 .row-invalid td { opacity:0.55; color:var(--deficit); }
 .bulk-bar { display:flex; align-items:center; gap:12px; background:var(--deficit-dim); border:1px solid rgba(204,91,66,0.4); border-radius:8px; padding:10px 14px; margin-top:14px; font-size:13px; }
 .bulk-bar span { color:var(--deficit); font-weight:600; }
+.pager { display:flex; align-items:center; justify-content:center; gap:14px; margin-top:14px; font-size:12.5px; color:var(--muted); }
+.pager button:disabled { opacity:0.35; cursor:not-allowed; }
 input[type=checkbox] { width:16px; height:16px; accent-color:var(--brass); cursor:pointer; }
 .form-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:14px; }
 .f-wide { grid-column:span 2; }
@@ -274,6 +276,7 @@ tbody tr:hover td { background:var(--surface-2); }
         <tbody id="commitTbody"></tbody>
       </table>
     </div>
+    <div id="pagerCommit" class="pager"></div>
   </section>
 
   <section class="cf-panel hidden" id="panel-inflows">
@@ -322,6 +325,7 @@ tbody tr:hover td { background:var(--surface-2); }
         <tbody id="inflowTbody"></tbody>
       </table>
     </div>
+    <div id="pagerInflow" class="pager"></div>
   </section>
 
   <section class="cf-panel hidden" id="panel-ledger">
@@ -387,6 +391,8 @@ let state = {
   period: 'month',
   selectedCommitIds: new Set(),
   selectedInflowIds: new Set(),
+  commitPage: 0,
+  inflowPage: 0,
 };
 
 function persistAndRenderData(){
@@ -417,13 +423,23 @@ function totals(){
 function buildTimeline(cashBalance){
   const days = 60;
   const start = new Date(); start.setHours(0,0,0,0);
+
+  const inflowByDate = new Map();
+  for (const f of state.inflows){
+    if (f.remainingAmount>0) inflowByDate.set(f.expectedDate, (inflowByDate.get(f.expectedDate)||0)+f.remainingAmount);
+  }
+  const commitByDate = new Map();
+  for (const c of state.commitments){
+    if (c.remainingAmount>0) commitByDate.set(c.dueDate, (commitByDate.get(c.dueDate)||0)+c.remainingAmount);
+  }
+
   let running = cashBalance;
   const arr = [];
   for (let i=0;i<days;i++){
     const d = new Date(start); d.setDate(d.getDate()+i);
     const key = d.toISOString().slice(0,10);
-    const inflowDue = state.inflows.filter(f=>f.remainingAmount>0 && f.expectedDate===key).reduce((s,f)=>s+f.remainingAmount,0);
-    const commitDue = state.commitments.filter(c=>c.remainingAmount>0 && c.dueDate===key).reduce((s,c)=>s+c.remainingAmount,0);
+    const inflowDue = inflowByDate.get(key) || 0;
+    const commitDue = commitByDate.get(key) || 0;
     running += inflowDue - commitDue;
     arr.push({ date:key, balance: running });
   }
@@ -588,10 +604,22 @@ function renderMiniLists(){
 
 function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
 
+const PAGE_SIZE = 50;
+
 function renderCommitTable(){
   const tbody = document.getElementById('commitTbody');
-  const rows = state.commitments.slice().sort((a,b)=>a.dueDate<b.dueDate?-1:1);
-  if (!rows.length){ tbody.innerHTML = '<tr><td colspan="8" class="empty">لا توجد التزامات مسجّلة بعد</td></tr>'; renderBulkBar('commit'); return; }
+  const allRows = state.commitments.slice().sort((a,b)=>a.dueDate<b.dueDate?-1:1);
+  if (!allRows.length){
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">لا توجد التزامات مسجّلة بعد</td></tr>';
+    renderBulkBar('commit');
+    renderPager('commit', 0, 0);
+    return;
+  }
+  const totalPages = Math.max(1, Math.ceil(allRows.length / PAGE_SIZE));
+  if (state.commitPage >= totalPages) state.commitPage = totalPages - 1;
+  if (state.commitPage < 0) state.commitPage = 0;
+  const rows = allRows.slice(state.commitPage*PAGE_SIZE, (state.commitPage+1)*PAGE_SIZE);
+
   tbody.innerHTML = rows.map(c=>{
     const st = commitStatus(c);
     const checked = state.selectedCommitIds.has(c.id) ? 'checked' : '';
@@ -620,14 +648,25 @@ function renderCommitTable(){
       </td>
     </tr>`;
   }).join('');
-  document.getElementById('commitSelectAll').checked = rows.length>0 && rows.every(c=>state.selectedCommitIds.has(c.id));
+  document.getElementById('commitSelectAll').checked = allRows.length>0 && allRows.every(c=>state.selectedCommitIds.has(c.id));
   renderBulkBar('commit');
+  renderPager('commit', state.commitPage, totalPages, allRows.length);
 }
 
 function renderInflowTable(){
   const tbody = document.getElementById('inflowTbody');
-  const rows = state.inflows.slice().sort((a,b)=>a.expectedDate<b.expectedDate?-1:1);
-  if (!rows.length){ tbody.innerHTML = '<tr><td colspan="8" class="empty">لا توجد تدفقات داخلة مسجّلة بعد</td></tr>'; renderBulkBar('inflow'); return; }
+  const allRows = state.inflows.slice().sort((a,b)=>a.expectedDate<b.expectedDate?-1:1);
+  if (!allRows.length){
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">لا توجد تدفقات داخلة مسجّلة بعد</td></tr>';
+    renderBulkBar('inflow');
+    renderPager('inflow', 0, 0);
+    return;
+  }
+  const totalPages = Math.max(1, Math.ceil(allRows.length / PAGE_SIZE));
+  if (state.inflowPage >= totalPages) state.inflowPage = totalPages - 1;
+  if (state.inflowPage < 0) state.inflowPage = 0;
+  const rows = allRows.slice(state.inflowPage*PAGE_SIZE, (state.inflowPage+1)*PAGE_SIZE);
+
   tbody.innerHTML = rows.map(f=>{
     const st = inflowStatus(f);
     const checked = state.selectedInflowIds.has(f.id) ? 'checked' : '';
@@ -656,8 +695,20 @@ function renderInflowTable(){
       </td>
     </tr>`;
   }).join('');
-  document.getElementById('inflowSelectAll').checked = rows.length>0 && rows.every(f=>state.selectedInflowIds.has(f.id));
+  document.getElementById('inflowSelectAll').checked = allRows.length>0 && allRows.every(f=>state.selectedInflowIds.has(f.id));
   renderBulkBar('inflow');
+  renderPager('inflow', state.inflowPage, totalPages, allRows.length);
+}
+
+function renderPager(kind, page, totalPages, totalCount){
+  const el = document.getElementById(kind==='commit' ? 'pagerCommit' : 'pagerInflow');
+  if (!el) return;
+  if (totalPages <= 1){ el.innerHTML = ''; return; }
+  el.innerHTML = `
+    <button class="btn-mini pager-prev" data-kind="${kind}" ${page<=0?'disabled':''}>‹ السابق</button>
+    <span>صفحة ${page+1} من ${totalPages} (${fmtMoney(totalCount)} صف)</span>
+    <button class="btn-mini pager-next" data-kind="${kind}" ${page>=totalPages-1?'disabled':''}>التالي ›</button>
+  `;
 }
 
 function renderLedger(){
@@ -948,6 +999,17 @@ document.getElementById('clearAllCommits').addEventListener('click', ()=>{
   state.commitments = [];
   state.selectedCommitIds.clear();
   persistAndRenderData();
+});
+
+document.getElementById('pagerCommit').addEventListener('click', e=>{
+  const t = e.target;
+  if (t.classList.contains('pager-prev')){ state.commitPage--; renderCommitTable(); }
+  else if (t.classList.contains('pager-next')){ state.commitPage++; renderCommitTable(); }
+});
+document.getElementById('pagerInflow').addEventListener('click', e=>{
+  const t = e.target;
+  if (t.classList.contains('pager-prev')){ state.inflowPage--; renderInflowTable(); }
+  else if (t.classList.contains('pager-next')){ state.inflowPage++; renderInflowTable(); }
 });
 
 // ---- Excel import for inflows ----
