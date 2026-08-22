@@ -229,6 +229,7 @@ tbody tr:hover td { background:var(--surface-2); }
       <div class="btn-row">
         <button class="btn-primary" id="toggleAddCommit">+ إضافة التزام</button>
         <button class="btn-secondary" id="toggleImportCommit">استيراد من Excel</button>
+        <button class="btn-mini btn-danger" id="clearAllCommits" style="align-self:center;">🗑️ حذف كل الالتزامات</button>
       </div>
     </div>
     <div class="add-form hidden" id="addCommitForm">
@@ -284,6 +285,7 @@ tbody tr:hover td { background:var(--surface-2); }
       <div class="btn-row">
         <button class="btn-primary" id="toggleAddInflow">+ إضافة تدفق داخل</button>
         <button class="btn-secondary" id="toggleImportInflow">استيراد من Excel</button>
+        <button class="btn-mini btn-danger" id="clearAllInflows" style="align-self:center;">🗑️ حذف كل التحصيلات</button>
       </div>
     </div>
     <div class="add-form hidden" id="addInflowForm">
@@ -927,6 +929,24 @@ document.getElementById('bulkDeleteInflow').addEventListener('click', ()=>{
   if (!confirm(`متأكد إنك عايز تحذف ${n} تدفق محدد؟ الإجراء ده مش قابل للتراجع.`)) return;
   state.inflows = state.inflows.filter(f=>!state.selectedInflowIds.has(f.id));
   state.selectedInflowIds.clear();
+  persistAndRenderData();
+});
+
+document.getElementById('clearAllInflows').addEventListener('click', ()=>{
+  const n = state.inflows.length;
+  if (!n) { alert('مفيش تحصيلات مسجّلة أصلاً.'); return; }
+  if (!confirm(`متأكد إنك عايز تمسح كل التحصيلات الـ ${n}؟ الإجراء ده نهائي ومش قابل للتراجع.`)) return;
+  state.inflows = [];
+  state.selectedInflowIds.clear();
+  persistAndRenderData();
+});
+
+document.getElementById('clearAllCommits').addEventListener('click', ()=>{
+  const n = state.commitments.length;
+  if (!n) { alert('مفيش التزامات مسجّلة أصلاً.'); return; }
+  if (!confirm(`متأكد إنك عايز تمسح كل الالتزامات الـ ${n}؟ الإجراء ده نهائي ومش قابل للتراجع.`)) return;
+  state.commitments = [];
+  state.selectedCommitIds.clear();
   persistAndRenderData();
 });
 
