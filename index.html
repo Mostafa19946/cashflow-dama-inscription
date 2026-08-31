@@ -1079,6 +1079,22 @@ function renderLedger(){
             <td><span class="badge ${t.kind==='تحصيل'?'st-done':'st-late'}">${t.kind}</span></td>
             <td>${escapeHtml(t.refName)}</td>
             <td class="num ${t.kind==='تحصيل'?'pos':'neg'}">${t.kind==='تحصيل'?'+':'−'}${fmtMoney(t.amount)}</td>
+            <td class="actions">
+              <button class="btn-mini txn-edit-toggle" data-id="${t.id}">تعديل</button>
+              <button class="btn-mini btn-danger txn-delete" data-id="${t.id}">حذف</button>
+            </td>
+          </tr>
+          <tr class="edit-row hidden" id="txn-editrow-${t.id}">
+            <td colspan="5">
+              <div class="pay-inline">
+                <label>المبلغ</label>
+                <input type="number" class="txn-edit-amount" data-id="${t.id}" value="${t.amount}" />
+                <label>التاريخ</label>
+                <input type="date" class="txn-edit-date" data-id="${t.id}" value="${t.date}" />
+                <button class="btn-primary btn-sm txn-edit-save" data-id="${t.id}">حفظ التعديل</button>
+                <button class="btn-mini txn-edit-cancel" data-id="${t.id}">إلغاء</button>
+              </div>
+            </td>
           </tr>`).join('')}
       </tbody></table>
     </div>`).join('');
@@ -1230,6 +1246,48 @@ document.querySelectorAll('.period-switch button').forEach(btn=>{
     state.period = btn.dataset.period;
     renderLedger();
   });
+});
+
+function adjustParentForTransaction(t, delta){
+  if (t.kind === 'تحصيل'){
+    const f = state.inflows.find(x=>x.id===t.refId);
+    if (f) f.remainingAmount = Math.min(f.expectedAmount, Math.max(0, f.remainingAmount + delta));
+  } else {
+    const c = state.commitments.find(x=>x.id===t.refId);
+    if (c) c.remainingAmount = Math.min(c.totalAmount, Math.max(0, c.remainingAmount + delta));
+  }
+}
+
+document.getElementById('ledgerGroups').addEventListener('click', e=>{
+  const t = e.target;
+  if (t.classList.contains('txn-edit-toggle')){
+    document.getElementById('txn-editrow-'+t.dataset.id).classList.toggle('hidden');
+  } else if (t.classList.contains('txn-edit-cancel')){
+    document.getElementById('txn-editrow-'+t.dataset.id).classList.add('hidden');
+  } else if (t.classList.contains('txn-delete')){
+    const id = t.dataset.id;
+    const txn = state.transactions.find(x=>x.id===id);
+    if (!txn) return;
+    if (!confirm(`متأكد إنك عايز تحذف عملية "${txn.kind}" بمبلغ ${fmtMoney(txn.amount)}؟ المبلغ ده هيترجع للمتبقي في البند الأصلي.`)) return;
+    adjustParentForTransaction(txn, txn.amount);
+    state.transactions = state.transactions.filter(x=>x.id!==id);
+    persistAndRenderData();
+  } else if (t.classList.contains('txn-edit-save')){
+    const id = t.dataset.id;
+    const txn = state.transactions.find(x=>x.id===id);
+    if (!txn) return;
+    const newAmount = parseFloat(document.querySelector(`.txn-edit-amount[data-id="${id}"]`).value);
+    const newDate = document.querySelector(`.txn-edit-date[data-id="${id}"]`).value;
+    if (!newAmount || newAmount<=0 || !newDate){
+      alert('تأكد إن المبلغ والتاريخ مكتوبين صح.');
+      return;
+    }
+    adjustParentForTransaction(txn, txn.amount);
+    txn.amount = newAmount;
+    txn.date = newDate;
+    adjustParentForTransaction(txn, -newAmount);
+    persistAndRenderData();
+  }
 });
 
 // delegated events for dynamic tables
