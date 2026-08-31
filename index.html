@@ -96,6 +96,17 @@ tbody tr:hover td { background:var(--surface-2); }
 .st-done { background:var(--surplus-dim); color:var(--surplus); }
 .st-late { background:var(--deficit-dim); color:var(--deficit); }
 .st-due { background:var(--brass-dim); color:var(--brass); }
+.urg-normal { background:rgba(144,153,143,0.18); color:var(--muted); }
+.urg-high { background:rgba(230,160,60,0.16); color:#E6A03C; }
+.urg-urgent { background:var(--deficit-dim); color:var(--deficit); }
+.urg-deferred { background:rgba(144,153,143,0.1); color:var(--muted-2); }
+
+.approval-row td { background:var(--surface-2); padding:14px 10px; }
+.approval-steps { display:flex; gap:14px; flex-wrap:wrap; }
+.approval-step { display:flex; align-items:center; gap:8px; background:var(--surface-3); border:1px solid var(--line-strong); border-radius:8px; padding:8px 12px; font-size:12.5px; cursor:pointer; }
+.approval-step.done { border-color:var(--surplus); background:var(--surplus-dim); color:var(--surplus); }
+.approval-step.locked { opacity:0.45; cursor:not-allowed; }
+.approval-step input { cursor:pointer; }
 
 .pay-row td { background:var(--surface-2); padding:12px 10px; }
 .edit-row td { background:var(--surface-2); padding:14px 10px; border-top:2px solid var(--brass-dim); }
@@ -107,6 +118,12 @@ tbody tr:hover td { background:var(--surface-2); }
 .chart-box svg { width:100%; height:auto; display:block; }
 .legend-row { display:flex; gap:20px; margin-top:10px; font-size:11.5px; color:var(--muted); flex-wrap:wrap; }
 .legend-row .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-inline-end:6px; }
+.gap-cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px,1fr)); gap:10px; margin-top:10px; }
+.gap-card { background:var(--deficit-dim); border:1px solid rgba(204,91,66,0.35); border-radius:10px; padding:12px 14px; }
+.gap-card-range { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink); direction:ltr; text-align:right; }
+.gap-card-days { font-size:20px; font-weight:700; color:var(--deficit); margin:4px 0; }
+.gap-card-min { font-size:11.5px; color:var(--muted); }
+.gap-card-min b { color:var(--deficit); font-family:'IBM Plex Mono',monospace; }
 
 .ledger-divider { border-top:3px double var(--line-strong); margin:24px 0; }
 .two-col { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
@@ -130,6 +147,24 @@ tbody tr:hover td { background:var(--surface-2); }
 
 .footer-note { text-align:center; color:var(--muted-2); font-size:11px; margin-top:24px; }
 
+.login-wrap { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px; }
+.login-card { background:var(--surface); border:1px solid var(--line-strong); border-radius:14px; padding:32px 28px; width:100%; max-width:360px; }
+.login-card h1 { font-family:'Tajawal',sans-serif; font-size:19px; margin:0 0 4px; text-align:center; }
+.login-card p.hint { font-size:11.5px; color:var(--muted); text-align:center; margin:0 0 22px; }
+.login-field { margin-bottom:14px; }
+.login-field label { display:block; font-size:11.5px; color:var(--muted); margin-bottom:6px; }
+.login-field input { width:100%; background:var(--surface-2); border:1px solid var(--line-strong); color:var(--ink); border-radius:8px; padding:10px 12px; font-size:13.5px; font-family:'IBM Plex Sans Arabic',sans-serif; outline:none; }
+.login-field input:focus { border-color:var(--brass); }
+.login-error { color:var(--deficit); font-size:12px; text-align:center; margin:0 0 10px; min-height:16px; }
+.login-card .btn-primary { width:100%; padding:11px; margin-top:6px; }
+.login-note { font-size:10.5px; color:var(--muted-2); text-align:center; margin-top:18px; line-height:1.6; }
+
+.user-badge { display:flex; align-items:center; gap:10px; font-size:12.5px; color:var(--muted); }
+.user-badge b { color:var(--ink); }
+.user-badge .role-tag { background:var(--brass-dim); color:var(--brass); padding:2px 9px; border-radius:20px; font-size:10.5px; font-weight:600; }
+.logout-btn { background:none; border:1px solid var(--line-strong); color:var(--muted); border-radius:6px; padding:5px 11px; font-size:11.5px; cursor:pointer; }
+.logout-btn:hover { border-color:var(--deficit); color:var(--deficit); }
+
 @media (max-width:900px) {
   .cf-stats { grid-template-columns:repeat(2,1fr); }
   .form-grid { grid-template-columns:1fr 1fr; }
@@ -144,18 +179,44 @@ tbody tr:hover td { background:var(--surface-2); }
 </style>
 </head>
 <body>
-<div id="app">
+
+<div id="loginScreen" class="login-wrap">
+  <div class="login-card">
+    <h1>لوحة الخزينة</h1>
+    <p class="hint">سجّل الدخول بحسابك للمتابعة</p>
+    <p class="login-error" id="loginError"></p>
+    <div class="login-field">
+      <label>اسم المستخدم</label>
+      <input type="text" id="loginUsername" autocomplete="username" />
+    </div>
+    <div class="login-field">
+      <label>كلمة المرور</label>
+      <input type="password" id="loginPassword" autocomplete="current-password" />
+    </div>
+    <button class="btn-primary" id="loginBtn">دخول</button>
+    <p class="login-note">أول مرة؟ استخدم: admin / admin123 ثم غيّر كلمة المرور من تبويب "المستخدمين".<br />ملاحظة: ده تسجيل دخول محلي بسيط لتنظيم الاستخدام، مش حماية أمنية حقيقية — البيانات كلها محفوظة على نفس الجهاز.</p>
+  </div>
+</div>
+
+<div id="app" class="hidden">
 
   <header class="cf-header">
     <div>
       <span class="cf-eyebrow">لوحة الخزينة</span>
       <h1>متابعة الالتزامات والتدفقات النقدية</h1>
     </div>
-    <div class="cf-balance-box">
-      <label>الرصيد الافتتاحي (الخزينة/البنك)</label>
-      <div class="cf-balance-input">
-        <input type="number" id="openingBalanceInput" value="0" />
-        <span>ج.م</span>
+    <div style="display:flex; align-items:center; gap:18px; flex-wrap:wrap;">
+      <div class="user-badge">
+        <span>مسجل دخول: <b id="currentUserName">—</b></span>
+        <span class="role-tag" id="currentUserRoleTag">—</span>
+        <button class="logout-btn" id="logoutBtn">تسجيل خروج</button>
+      </div>
+      <div class="cf-balance-box">
+        <label>الرصيد الافتتاحي (الخزينة/البنك)</label>
+        <div class="cf-balance-input">
+          <input type="number" id="openingBalanceInput" value="0" />
+          <span>ج.م</span>
+        </div>
       </div>
     </div>
   </header>
@@ -172,14 +233,9 @@ tbody tr:hover td { background:var(--surface-2); }
       <span class="stat-sub" id="statCommitSub">0 بند غير مسدد</span>
     </div>
     <div class="stat-card">
-      <span class="stat-label">تحصيلات متوقعة (قادمة)</span>
+      <span class="stat-label">تحصيلات متوقعة</span>
       <span class="stat-value pos" id="statInflow">0</span>
-      <span class="stat-sub" id="statInflowSub">0 بند لسه مستحق</span>
-    </div>
-    <div class="stat-card" id="statLateCard">
-      <span class="stat-label">تحصيلات متأخرة</span>
-      <span class="stat-value neg" id="statLate">0</span>
-      <span class="stat-sub" id="statLateSub">0 بند فات موعده</span>
+      <span class="stat-sub" id="statInflowSub">0 بند غير محصّل</span>
     </div>
     <div class="stat-card" id="statGapCard">
       <span class="stat-label">أقرب فجوة تمويل</span>
@@ -193,18 +249,22 @@ tbody tr:hover td { background:var(--surface-2); }
     <button class="tab-btn" data-tab="commitments">الالتزامات</button>
     <button class="tab-btn" data-tab="inflows">التدفقات الداخلة</button>
     <button class="tab-btn" data-tab="ledger">سجل الحركة</button>
+    <button class="tab-btn hidden" data-tab="users" id="usersTabBtn">المستخدمين</button>
   </nav>
 
   <section class="cf-panel" id="panel-overview">
     <div class="panel-head">
-      <h2>خط الزمن — الفجوة اليومية المتوقعة (60 يوم)</h2>
-      <p class="panel-sub">الرصيد المتوقع يوميًا: افتراض تحصيل والتزام كل بند في تاريخ استحقاقه. تحت الصفر = فجوة تمويل.</p>
+      <h2>فجوات التمويل المتوقعة (60 يوم)</h2>
+      <p class="panel-sub">الرصيد المتوقع يوميًا: افتراض تحصيل والتزام كل بند في تاريخ استحقاقه. المناطق المظللة بالأحمر = فترات فجوة تمويل فعلية.</p>
     </div>
     <div class="chart-box" id="chartBox"></div>
     <div class="legend-row">
       <span><i class="dot" style="background:#4FA579"></i> رصيد موجب</span>
       <span><i class="dot" style="background:#CC5B42"></i> رصيد سالب (فجوة)</span>
     </div>
+
+    <div id="gapPeriodsBox" style="margin-top:18px;"></div>
+
     <div class="ledger-divider"></div>
     <div class="two-col">
       <div>
@@ -212,13 +272,9 @@ tbody tr:hover td { background:var(--surface-2); }
         <ul class="mini-list" id="miniCommit"></ul>
       </div>
       <div>
-        <h3 class="mini-head">أقرب 5 تحصيلات متوقعة (قادمة)</h3>
+        <h3 class="mini-head">أقرب 5 تحصيلات مستحقة</h3>
         <ul class="mini-list" id="miniInflow"></ul>
       </div>
-    </div>
-    <div id="lateInflowBlock" class="hidden" style="margin-top:20px;">
-      <h3 class="mini-head" style="color:var(--deficit);">تحصيلات متأخرة — فاتت مواعيدها</h3>
-      <ul class="mini-list" id="miniLateInflow"></ul>
     </div>
     <div id="badDateBlock" class="hidden" style="margin-top:20px;">
       <h3 class="mini-head" style="color:var(--deficit);">⚠️ بنود بتاريخ غير منطقي (متجاهلة من كل الحسابات لحد ما تتصحح)</h3>
@@ -250,6 +306,13 @@ tbody tr:hover td { background:var(--surface-2); }
             <option>رواتب</option><option>ضرائب</option><option>تأمينات</option><option>أخرى</option>
           </select>
         </div>
+        <div class="f-field"><label>رقم طلب الالتزام</label><input id="cRequestNumber" placeholder="مثال: REQ-1024" /></div>
+        <div class="f-field"><label>تاريخ تقديم الطلب</label><input type="date" id="cRequestDate" /></div>
+        <div class="f-field"><label>مدى الأهمية</label>
+          <select id="cUrgency">
+            <option>عادي</option><option>مرتفع</option><option>عاجل</option><option>مؤجل</option>
+          </select>
+        </div>
         <div class="f-field"><label>القيمة الإجمالية</label><input type="number" id="cAmount" placeholder="0" /></div>
         <div class="f-field"><label>تاريخ الاستحقاق</label><input type="date" id="cDate" /></div>
         <div class="f-field"><label>التكرار</label>
@@ -279,7 +342,7 @@ tbody tr:hover td { background:var(--surface-2); }
 
     <div class="table-wrap">
       <table>
-        <thead><tr><th style="width:30px;"><input type="checkbox" id="commitSelectAll" /></th><th>الاسم</th><th>النوع</th><th>الاستحقاق</th><th>الإجمالي</th><th>المتبقي</th><th>الحالة</th><th></th></tr></thead>
+        <thead><tr><th style="width:30px;"><input type="checkbox" id="commitSelectAll" /></th><th>الاسم</th><th>النوع</th><th>الأهمية</th><th>الاستحقاق</th><th>الأيام</th><th>الإجمالي</th><th>المتبقي</th><th>الاعتمادات</th><th>الحالة</th><th></th></tr></thead>
         <tbody id="commitTbody"></tbody>
       </table>
     </div>
@@ -363,6 +426,42 @@ tbody tr:hover td { background:var(--surface-2); }
     <div class="ledger-groups" id="ledgerGroups"></div>
   </section>
 
+  <section class="cf-panel hidden" id="panel-users">
+    <div class="panel-head row-between">
+      <div>
+        <h2>المستخدمين والصلاحيات</h2>
+        <p class="panel-sub">متاح فقط للمستخدم الأساسي (Admin). حدّد لكل مستخدم صلاحيته ودوره في سلسلة الاعتماد.</p>
+      </div>
+      <button class="btn-primary" id="toggleAddUser">+ إضافة مستخدم</button>
+    </div>
+    <div class="add-form hidden" id="addUserForm">
+      <div class="form-grid">
+        <div class="f-field"><label>اسم المستخدم (للدخول)</label><input id="uUsername" placeholder="مثال: ahmed.accounts" /></div>
+        <div class="f-field"><label>كلمة المرور</label><input type="text" id="uPassword" placeholder="اكتب كلمة مرور" /></div>
+        <div class="f-field"><label>الاسم المعروض</label><input id="uDisplayName" placeholder="مثال: أحمد محمد" /></div>
+        <div class="f-field"><label>نوع الصلاحية</label>
+          <select id="uRole"><option value="user">مستخدم عادي</option><option value="admin">مستخدم أساسي (Admin)</option></select>
+        </div>
+        <div class="f-field"><label>دوره في سلسلة الاعتماد</label>
+          <select id="uApprovalRole">
+            <option value="">بدون — لا يعتمد التزامات</option>
+            <option value="accountsManager">مدير الحسابات</option>
+            <option value="financialManager">مدير القطاع المالي</option>
+            <option value="viceChairman">نائب رئيس مجلس الإدارة</option>
+            <option value="chairman">رئيس مجلس الإدارة</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn-primary" id="saveUser">حفظ المستخدم</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>اسم الدخول</th><th>الاسم المعروض</th><th>الصلاحية</th><th>دور الاعتماد</th><th></th></tr></thead>
+        <tbody id="usersTbody"></tbody>
+      </table>
+    </div>
+  </section>
+
   <p class="footer-note">البيانات محفوظة محليًا على هذا الجهاز/المتصفح فقط.</p>
 </div>
 
@@ -370,6 +469,30 @@ tbody tr:hover td { background:var(--surface-2); }
 <script>
 const MONTHS_AR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const COMMIT_TYPES = ["مورد","قسط تمويل","إيجار","رواتب","ضرائب","تأمينات","أخرى"];
+const URGENCY_LEVELS = ["عادي","مرتفع","عاجل","مؤجل"];
+const APPROVAL_ROLES = [
+  { key: 'accountsManager', label: 'مدير الحسابات' },
+  { key: 'financialManager', label: 'مدير القطاع المالي' },
+  { key: 'viceChairman', label: 'نائب رئيس مجلس الإدارة' },
+  { key: 'chairman', label: 'رئيس مجلس الإدارة' },
+];
+function emptyApprovals(){
+  const o = {};
+  APPROVAL_ROLES.forEach(r => o[r.key] = false);
+  return o;
+}
+function daysBetween(dateA, dateB){
+  if (!dateA || !dateB) return null;
+  const a = new Date(dateA), b = new Date(dateB);
+  if (isNaN(a) || isNaN(b)) return null;
+  return Math.round((b - a) / 86400000);
+}
+function urgencyClass(u){
+  if (u === 'عاجل') return 'urg-urgent';
+  if (u === 'مرتفع') return 'urg-high';
+  if (u === 'مؤجل') return 'urg-deferred';
+  return 'urg-normal';
+}
 
 function todayStr(){ const d=new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0,10); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
@@ -407,6 +530,44 @@ let state = {
   inflowSearch: '',
 };
 
+let users = load('users', []);
+let currentUser = null;
+
+if (!users.length){
+  users = [{
+    id: uid(), username: 'admin', password: 'admin123',
+    displayName: 'المدير الأساسي', role: 'admin', approvalRole: '',
+  }];
+  save('users', users);
+}
+
+function saveUsers(){ save('users', users); }
+
+function tryAutoLogin(){
+  const savedId = localStorage.getItem('cf_currentUserId');
+  if (savedId){
+    const u = users.find(x=>x.id===savedId);
+    if (u) currentUser = u;
+  }
+}
+
+function showApp(){
+  document.getElementById('loginScreen').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  document.getElementById('currentUserName').textContent = currentUser.displayName || currentUser.username;
+  const roleTag = document.getElementById('currentUserRoleTag');
+  const roleObj = APPROVAL_ROLES.find(r=>r.key===currentUser.approvalRole);
+  roleTag.textContent = currentUser.role==='admin' ? 'أدمن' : (roleObj ? roleObj.label : 'مستخدم');
+  document.getElementById('usersTabBtn').classList.toggle('hidden', currentUser.role!=='admin');
+  renderAll();
+}
+
+function showLogin(msg){
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('loginScreen').classList.remove('hidden');
+  document.getElementById('loginError').textContent = msg || '';
+}
+
 function persistAndRenderData(){
   save('commitments', state.commitments);
   save('inflows', state.inflows);
@@ -422,14 +583,12 @@ function isSaneDate(dateStr){
 }
 
 function totals(){
-  const today = todayStr();
   const totalRemainingCommit = state.commitments.reduce((s,c)=>s+Math.max(0,c.remainingAmount),0);
-  const totalUpcomingInflow = state.inflows.reduce((s,f)=>s+(f.remainingAmount>0 && isSaneDate(f.expectedDate) && f.expectedDate>=today ? f.remainingAmount : 0),0);
-  const totalLateInflow = state.inflows.reduce((s,f)=>s+(f.remainingAmount>0 && isSaneDate(f.expectedDate) && f.expectedDate<today ? f.remainingAmount : 0),0);
+  const totalRemainingInflow = state.inflows.reduce((s,f)=>s+(f.remainingAmount>0 && isSaneDate(f.expectedDate) ? f.remainingAmount : 0),0);
   const totalPaid = state.transactions.filter(t=>t.kind==='سداد').reduce((s,t)=>s+t.amount,0);
   const totalCollected = state.transactions.filter(t=>t.kind==='تحصيل').reduce((s,t)=>s+t.amount,0);
   const cashBalance = (Number(state.openingBalance)||0) + totalCollected - totalPaid;
-  return { totalRemainingCommit, totalUpcomingInflow, totalLateInflow, cashBalance };
+  return { totalRemainingCommit, totalRemainingInflow, cashBalance };
 }
 
 function buildTimeline(cashBalance){
@@ -472,8 +631,7 @@ function inflowStatus(f){
 }
 
 function renderStats(){
-  const { totalRemainingCommit, totalUpcomingInflow, totalLateInflow, cashBalance } = totals();
-  const today = todayStr();
+  const { totalRemainingCommit, totalRemainingInflow, cashBalance } = totals();
   const timeline = buildTimeline(cashBalance);
   const firstGap = timeline.find(t=>t.balance<0);
 
@@ -484,14 +642,8 @@ function renderStats(){
   document.getElementById('statCommit').textContent = fmtMoney(totalRemainingCommit);
   document.getElementById('statCommitSub').textContent = state.commitments.filter(c=>c.remainingAmount>0).length + ' بند غير مسدد';
 
-  document.getElementById('statInflow').textContent = fmtMoney(totalUpcomingInflow);
-  document.getElementById('statInflowSub').textContent = state.inflows.filter(f=>f.remainingAmount>0 && f.expectedDate>=today).length + ' بند لسه مستحق';
-
-  const lateCard = document.getElementById('statLateCard');
-  const lateCount = state.inflows.filter(f=>f.remainingAmount>0 && f.expectedDate<today).length;
-  document.getElementById('statLate').textContent = fmtMoney(totalLateInflow);
-  document.getElementById('statLateSub').textContent = lateCount + ' بند فات موعده';
-  lateCard.classList.toggle('stat-alert', lateCount>0);
+  document.getElementById('statInflow').textContent = fmtMoney(totalRemainingInflow);
+  document.getElementById('statInflowSub').textContent = state.inflows.filter(f=>f.remainingAmount>0).length + ' بند غير محصّل';
 
   const gapCard = document.getElementById('statGapCard');
   const gapVal = document.getElementById('statGap');
@@ -538,19 +690,24 @@ function renderChart(timeline){
     xTicks += `<text x="${x.toFixed(1)}" y="${H-8}" fill="#90998F" font-size="10" text-anchor="middle" font-family="IBM Plex Mono, monospace">${fmtDateLabel(timeline[i].date)}</text>`;
   }
 
-  let minIdx=0;
-  timeline.forEach((t,i)=>{ if (t.balance<timeline[minIdx].balance) minIdx=i; });
-  const gapPoint = timeline[minIdx].balance<0 ? timeline[minIdx] : null;
+  const periods = detectGapPeriods(timeline);
 
-  let markers = '';
+  let bands = '';
+  let periodMarkers = '';
+  periods.forEach(p=>{
+    const x1 = xScale(p.startIdx);
+    const x2 = xScale(p.endIdx);
+    const bw = Math.max(2, x2-x1);
+    bands += `<rect x="${x1.toFixed(1)}" y="${mT}" width="${bw.toFixed(1)}" height="${innerH.toFixed(1)}" fill="#CC5B42" opacity="0.10" />`;
+    const gx = xScale(p.minIdx), gy = yScale(p.minBalance);
+    periodMarkers += `<circle cx="${gx.toFixed(1)}" cy="${gy.toFixed(1)}" r="4" fill="#CC5B42" />`;
+    periodMarkers += `<text x="${gx.toFixed(1)}" y="${(gy+16).toFixed(1)}" fill="#CC5B42" font-size="10" text-anchor="middle" font-family="IBM Plex Mono, monospace">${p.days} يوم / ${fmtMoney(p.minBalance)}</text>`;
+  });
+
   const startPt = timeline[0];
-  markers += `<circle cx="${xScale(0).toFixed(1)}" cy="${yScale(startPt.balance).toFixed(1)}" r="4" fill="#C9A227" />`;
+  let markers = `<circle cx="${xScale(0).toFixed(1)}" cy="${yScale(startPt.balance).toFixed(1)}" r="4" fill="#C9A227" />`;
   markers += `<text x="${xScale(0).toFixed(1)}" y="${(yScale(startPt.balance)-10).toFixed(1)}" fill="#C9A227" font-size="10.5" text-anchor="start" font-family="IBM Plex Mono, monospace">اليوم ${fmtMoney(startPt.balance)}</text>`;
-  if (gapPoint){
-    const gx=xScale(minIdx), gy=yScale(gapPoint.balance);
-    markers += `<circle cx="${gx.toFixed(1)}" cy="${gy.toFixed(1)}" r="4" fill="#CC5B42" />`;
-    markers += `<text x="${gx.toFixed(1)}" y="${(gy+16).toFixed(1)}" fill="#CC5B42" font-size="10.5" text-anchor="middle" font-family="IBM Plex Mono, monospace">${fmtDateLabel(gapPoint.date)}: ${fmtMoney(gapPoint.balance)}</text>`;
-  }
+  markers += periodMarkers;
 
   const svg = `
   <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="direction:ltr">
@@ -568,6 +725,7 @@ function renderChart(timeline){
         <stop offset="100%" stop-color="#CC5B42" />
       </linearGradient>
     </defs>
+    ${bands}
     <line x1="${mL}" y1="${zeroY.toFixed(1)}" x2="${W-mR}" y2="${zeroY.toFixed(1)}" stroke="#90998F" stroke-dasharray="4 4" stroke-width="1" />
     <text x="${mL-8}" y="${(zeroY+3).toFixed(1)}" fill="#90998F" font-size="10" text-anchor="end" font-family="IBM Plex Mono, monospace">0</text>
     <path d="${areaPath}" fill="url(#balGrad)" stroke="none" />
@@ -576,30 +734,66 @@ function renderChart(timeline){
     ${xTicks}
   </svg>`;
   document.getElementById('chartBox').innerHTML = svg;
+  renderGapPeriodsList(periods);
+}
+
+function detectGapPeriods(timeline){
+  const periods = [];
+  let current = null;
+  timeline.forEach((t,i)=>{
+    if (t.balance < 0){
+      if (!current) current = { startIdx:i, endIdx:i, minBalance:t.balance, minIdx:i };
+      else {
+        current.endIdx = i;
+        if (t.balance < current.minBalance){ current.minBalance = t.balance; current.minIdx = i; }
+      }
+    } else if (current){
+      periods.push(current);
+      current = null;
+    }
+  });
+  if (current) periods.push(current);
+  return periods.map(p => ({
+    startIdx: p.startIdx, endIdx: p.endIdx, minIdx: p.minIdx,
+    startDate: timeline[p.startIdx].date,
+    endDate: timeline[p.endIdx].date,
+    days: p.endIdx - p.startIdx + 1,
+    minBalance: p.minBalance,
+    minDate: timeline[p.minIdx].date,
+  }));
+}
+
+function renderGapPeriodsList(periods){
+  const box = document.getElementById('gapPeriodsBox');
+  if (!periods.length){
+    box.innerHTML = '<p class="empty" style="padding:14px 0;">✅ لا توجد فجوات تمويل متوقعة خلال الـ 60 يوم القادمة.</p>';
+    return;
+  }
+  box.innerHTML = `
+    <h3 class="mini-head" style="color:var(--deficit);">فجوات التمويل التفصيلية (${periods.length})</h3>
+    <div class="gap-cards">
+      ${periods.map(p => `
+        <div class="gap-card">
+          <div class="gap-card-range">${fmtDateLabel(p.startDate)} → ${fmtDateLabel(p.endDate)}</div>
+          <div class="gap-card-days">${p.days} يوم</div>
+          <div class="gap-card-min">أعمق نقطة: <b>${fmtMoney(p.minBalance)}</b> ج.م بتاريخ ${fmtDateLabel(p.minDate)}</div>
+        </div>`).join('')}
+    </div>`;
 }
 
 function renderMiniLists(){
-  const today = todayStr();
   const commitList = state.commitments.filter(c=>c.remainingAmount>0).sort((a,b)=>a.dueDate<b.dueDate?-1:1).slice(0,5);
-  const inflowList = state.inflows.filter(f=>f.remainingAmount>0 && isSaneDate(f.expectedDate) && f.expectedDate>=today).sort((a,b)=>a.expectedDate<b.expectedDate?-1:1).slice(0,5);
-  const lateList = state.inflows.filter(f=>f.remainingAmount>0 && isSaneDate(f.expectedDate) && f.expectedDate<today).sort((a,b)=>a.expectedDate<b.expectedDate?-1:1);
+  const inflowList = state.inflows.filter(f=>f.remainingAmount>0 && isSaneDate(f.expectedDate)).sort((a,b)=>a.expectedDate<b.expectedDate?-1:1).slice(0,5);
   const badDateList = state.inflows.filter(f=>f.remainingAmount>0 && !isSaneDate(f.expectedDate));
 
   const mc = document.getElementById('miniCommit');
   mc.innerHTML = commitList.length ? commitList.map(c=>`<li><span>${escapeHtml(c.name)}</span><span class="mini-date">${fmtDateLabel(c.dueDate)}</span><span class="neg">${fmtMoney(c.remainingAmount)}</span></li>`).join('') : '<li class="empty">لا توجد التزامات معلقة</li>';
 
   const mi = document.getElementById('miniInflow');
-  mi.innerHTML = inflowList.length ? inflowList.map(f=>`<li><span>${escapeHtml(f.name)}</span><span class="mini-date">${fmtDateLabel(f.expectedDate)}</span><span class="pos">${fmtMoney(f.remainingAmount)}</span></li>`).join('') : '<li class="empty">لا توجد تحصيلات قادمة معلقة</li>';
-
-  const lateBlock = document.getElementById('lateInflowBlock');
-  const ml = document.getElementById('miniLateInflow');
-  if (lateList.length){
-    lateBlock.classList.remove('hidden');
-    ml.innerHTML = lateList.map(f=>`<li><span>${escapeHtml(f.name)}</span><span class="mini-date neg">${fmtDateLabel(f.expectedDate)}</span><span class="neg">${fmtMoney(f.remainingAmount)}</span></li>`).join('');
-  } else {
-    lateBlock.classList.add('hidden');
-    ml.innerHTML = '';
-  }
+  mi.innerHTML = inflowList.length ? inflowList.map(f=>{
+    const isLate = f.expectedDate < todayStr();
+    return `<li><span>${escapeHtml(f.name)}</span><span class="mini-date${isLate?' neg':''}">${fmtDateLabel(f.expectedDate)}${isLate?' (متأخر)':''}</span><span class="pos">${fmtMoney(f.remainingAmount)}</span></li>`;
+  }).join('') : '<li class="empty">لا توجد تحصيلات معلقة</li>';
 
   const badBlock = document.getElementById('badDateBlock');
   const bd = document.getElementById('miniBadDate');
@@ -628,7 +822,7 @@ function renderCommitTable(){
     allRows = allRows.filter(c=>c.name.toLowerCase().includes(q));
   }
   if (!allRows.length){
-    tbody.innerHTML = `<tr><td colspan="8" class="empty">${state.commitSearch.trim() ? 'مفيش نتائج مطابقة للبحث' : 'لا توجد التزامات مسجّلة بعد'}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11" class="empty">${state.commitSearch.trim() ? 'مفيش نتائج مطابقة للبحث' : 'لا توجد التزامات مسجّلة بعد'}</td></tr>`;
     renderBulkBar('commit');
     renderPager('commit', 0, 0);
     return;
@@ -641,13 +835,20 @@ function renderCommitTable(){
   tbody.innerHTML = rows.map(c=>{
     const st = commitStatus(c);
     const checked = state.selectedCommitIds.has(c.id) ? 'checked' : '';
+    const urgency = c.urgency || 'عادي';
+    const approvals = c.approvals || emptyApprovals();
+    const approvedCount = APPROVAL_ROLES.filter(r=>approvals[r.key]).length;
+    const days = daysBetween(c.requestDate, c.dueDate);
     return `<tr>
       <td><input type="checkbox" class="commit-checkbox" data-id="${c.id}" ${checked} /></td>
-      <td>${escapeHtml(c.name)}${c.notes?`<div class="td-note">${escapeHtml(c.notes)}</div>`:''}</td>
+      <td>${escapeHtml(c.name)}${c.requestNumber?`<div class="td-note">طلب رقم: ${escapeHtml(c.requestNumber)}</div>`:''}${c.notes?`<div class="td-note">${escapeHtml(c.notes)}</div>`:''}</td>
       <td>${escapeHtml(c.type)}</td>
+      <td><span class="badge ${urgencyClass(urgency)}">${escapeHtml(urgency)}</span></td>
       <td style="direction:ltr; text-align:left;">${fmtDateLabel(c.dueDate)}</td>
+      <td class="num">${days!=null ? days+' يوم' : '—'}</td>
       <td class="num">${fmtMoney(c.totalAmount)}</td>
       <td class="num neg">${fmtMoney(c.remainingAmount)}</td>
+      <td><button class="btn-mini approval-toggle" data-id="${c.id}">${approvedCount}/4 ✅</button></td>
       <td><span class="badge ${st.cls}">${st.label}</span></td>
       <td class="actions">
         ${c.remainingAmount>0 ? `<button class="btn-mini pay-toggle" data-id="${c.id}">تسجيل سداد</button>` : ''}
@@ -656,7 +857,7 @@ function renderCommitTable(){
       </td>
     </tr>
     <tr class="pay-row hidden" id="payrow-${c.id}">
-      <td colspan="8">
+      <td colspan="11">
         <div class="pay-inline">
           <label>المبلغ المسدد</label>
           <input type="number" class="pay-amount" data-id="${c.id}" value="${c.remainingAmount}" />
@@ -666,11 +867,29 @@ function renderCommitTable(){
         </div>
       </td>
     </tr>
+    <tr class="approval-row hidden" id="approvalrow-${c.id}">
+      <td colspan="11">
+        <div class="approval-steps">
+          ${APPROVAL_ROLES.map((r,i)=>{
+            const done = !!approvals[r.key];
+            const prevDone = i===0 || !!approvals[APPROVAL_ROLES[i-1].key];
+            return `<label class="approval-step ${done?'done':''} ${!prevDone && !done ? 'locked':''}">
+              <input type="checkbox" class="approval-check" data-id="${c.id}" data-role="${r.key}" data-step="${i}" ${done?'checked':''} ${(!prevDone && !done)?'disabled':''} />
+              <span>${i+1}. ${r.label}</span>
+            </label>`;
+          }).join('')}
+        </div>
+        <p class="panel-sub" style="margin-top:8px;">الاعتماد بيتم بالترتيب: مدير الحسابات ← مدير القطاع المالي ← نائب رئيس مجلس الإدارة ← رئيس مجلس الإدارة. إلغاء اعتماد أي خطوة بيلغي اللي بعدها تلقائيًا.</p>
+      </td>
+    </tr>
     <tr class="edit-row hidden" id="editrow-commit-${c.id}">
-      <td colspan="8">
+      <td colspan="11">
         <div class="form-grid">
           <div class="f-field"><label>اسم الالتزام</label><input type="text" class="edit-name" data-id="${c.id}" value="${escapeAttr(c.name)}" /></div>
           <div class="f-field"><label>النوع</label><select class="edit-type" data-id="${c.id}">${optionsHtml(COMMIT_TYPES, c.type)}</select></div>
+          <div class="f-field"><label>رقم الطلب</label><input type="text" class="edit-request-number" data-id="${c.id}" value="${escapeAttr(c.requestNumber)}" /></div>
+          <div class="f-field"><label>تاريخ تقديم الطلب</label><input type="date" class="edit-request-date" data-id="${c.id}" value="${c.requestDate||''}" /></div>
+          <div class="f-field"><label>مدى الأهمية</label><select class="edit-urgency" data-id="${c.id}">${optionsHtml(URGENCY_LEVELS, urgency)}</select></div>
           <div class="f-field"><label>القيمة الإجمالية</label><input type="number" class="edit-total" data-id="${c.id}" value="${c.totalAmount}" /></div>
           <div class="f-field"><label>المتبقي</label><input type="number" class="edit-remaining" data-id="${c.id}" value="${c.remainingAmount}" /></div>
           <div class="f-field"><label>تاريخ الاستحقاق</label><input type="date" class="edit-date" data-id="${c.id}" value="${c.dueDate}" /></div>
@@ -881,6 +1100,7 @@ function renderAll(){
   renderCommitTable();
   renderInflowTable();
   renderLedger();
+  if (currentUser && currentUser.role==='admin') renderUsersTable();
 }
 
 // ---- events ----
@@ -894,7 +1114,7 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
-    ['overview','commitments','inflows','ledger'].forEach(t=>{
+    ['overview','commitments','inflows','ledger','users'].forEach(t=>{
       document.getElementById('panel-'+t).classList.toggle('hidden', t!==btn.dataset.tab);
     });
     state.tab = btn.dataset.tab;
@@ -914,8 +1134,12 @@ document.getElementById('saveCommit').addEventListener('click', ()=>{
     id: uid(), name, type: document.getElementById('cType').value, totalAmount: amount,
     remainingAmount: amount, dueDate, recurrence: document.getElementById('cRecurrence').value,
     notes: document.getElementById('cNotes').value.trim(),
+    requestNumber: document.getElementById('cRequestNumber').value.trim(),
+    requestDate: document.getElementById('cRequestDate').value || '',
+    urgency: document.getElementById('cUrgency').value,
+    approvals: emptyApprovals(),
   });
-  ['cName','cAmount','cNotes'].forEach(id=>document.getElementById(id).value='');
+  ['cName','cAmount','cNotes','cRequestNumber','cRequestDate'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('addCommitForm').classList.add('hidden');
   persistAndRenderData();
 });
@@ -975,6 +1199,9 @@ document.getElementById('commitTbody').addEventListener('click', e=>{
     const id = t.dataset.id;
     const name = document.querySelector(`.edit-name[data-id="${id}"]`).value.trim();
     const type = document.querySelector(`.edit-type[data-id="${id}"]`).value;
+    const requestNumber = document.querySelector(`.edit-request-number[data-id="${id}"]`).value.trim();
+    const requestDate = document.querySelector(`.edit-request-date[data-id="${id}"]`).value;
+    const urgency = document.querySelector(`.edit-urgency[data-id="${id}"]`).value;
     const total = parseFloat(document.querySelector(`.edit-total[data-id="${id}"]`).value);
     const remaining = parseFloat(document.querySelector(`.edit-remaining[data-id="${id}"]`).value);
     const dueDate = document.querySelector(`.edit-date[data-id="${id}"]`).value;
@@ -986,13 +1213,37 @@ document.getElementById('commitTbody').addEventListener('click', e=>{
     }
     const c = state.commitments.find(c=>c.id===id);
     if (!c) return;
-    Object.assign(c, { name, type, totalAmount: total, remainingAmount: remaining, dueDate, recurrence, notes });
+    Object.assign(c, { name, type, totalAmount: total, remainingAmount: remaining, dueDate, recurrence, notes, requestNumber, requestDate, urgency });
     persistAndRenderData();
+  } else if (t.classList.contains('approval-toggle')){
+    document.getElementById('approvalrow-'+t.dataset.id).classList.toggle('hidden');
   }
 });
 document.getElementById('commitTbody').addEventListener('change', e=>{
   const t = e.target;
-  if (t.classList.contains('commit-checkbox')){
+  if (t.classList.contains('approval-check')){
+    const id = t.dataset.id;
+    const role = t.dataset.role;
+    const c = state.commitments.find(c=>c.id===id);
+    if (!c) return;
+    if (t.checked && currentUser.role!=='admin' && currentUser.approvalRole!==role){
+      const roleObj = APPROVAL_ROLES.find(r=>r.key===role);
+      alert(`الاعتماد ده مخصص لـ "${roleObj.label}" بس. إنت مسجل دخول كـ "${currentUser.displayName}" ومش عندك صلاحية الاعتماد ده.`);
+      persistAndRenderData();
+      return;
+    }
+    if (!c.approvals) c.approvals = emptyApprovals();
+    const idx = APPROVAL_ROLES.findIndex(r=>r.key===role);
+    if (t.checked){
+      const prevOk = idx===0 || c.approvals[APPROVAL_ROLES[idx-1].key];
+      if (!prevOk){ alert('لازم الاعتماد اللي قبله يتم الأول.'); persistAndRenderData(); return; }
+      c.approvals[role] = true;
+    } else {
+      for (let i=idx;i<APPROVAL_ROLES.length;i++) c.approvals[APPROVAL_ROLES[i].key] = false;
+    }
+    persistAndRenderData();
+    document.getElementById('approvalrow-'+id).classList.remove('hidden');
+  } else if (t.classList.contains('commit-checkbox')){
     if (t.checked) state.selectedCommitIds.add(t.dataset.id); else state.selectedCommitIds.delete(t.dataset.id);
     renderBulkBar('commit');
     document.getElementById('commitSelectAll').checked = state.commitments.length>0 && state.commitments.every(c=>state.selectedCommitIds.has(c.id));
@@ -1403,6 +1654,7 @@ function renderImportPreviewCommit(rows){
         id: uid(), name: r.name, type: r.type, totalAmount: r.amount,
         remainingAmount: r.amount, dueDate: r.date, recurrence: r.recurrence,
         notes: r.notes,
+        requestNumber: '', requestDate: '', urgency: 'عادي', approvals: emptyApprovals(),
       });
     });
     document.getElementById('excelFileInputCommit').value = '';
@@ -1457,7 +1709,89 @@ document.getElementById('excelFileInputCommit').addEventListener('change', e=>{
   reader.readAsArrayBuffer(file);
 });
 
-renderAll();
+// ---- Auth: login / logout ----
+document.getElementById('loginBtn').addEventListener('click', doLoginAttempt);
+document.getElementById('loginPassword').addEventListener('keydown', e=>{ if (e.key==='Enter') doLoginAttempt(); });
+document.getElementById('loginUsername').addEventListener('keydown', e=>{ if (e.key==='Enter') doLoginAttempt(); });
+
+function doLoginAttempt(){
+  const username = document.getElementById('loginUsername').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const u = users.find(x=>x.username===username && x.password===password);
+  if (!u){
+    document.getElementById('loginError').textContent = 'اسم المستخدم أو كلمة المرور غلط.';
+    return;
+  }
+  currentUser = u;
+  localStorage.setItem('cf_currentUserId', u.id);
+  document.getElementById('loginUsername').value = '';
+  document.getElementById('loginPassword').value = '';
+  showApp();
+}
+
+document.getElementById('logoutBtn').addEventListener('click', ()=>{
+  currentUser = null;
+  localStorage.removeItem('cf_currentUserId');
+  showLogin('');
+});
+
+// ---- Users management (admin only) ----
+document.getElementById('toggleAddUser').addEventListener('click', ()=>{
+  document.getElementById('addUserForm').classList.toggle('hidden');
+});
+document.getElementById('saveUser').addEventListener('click', ()=>{
+  const username = document.getElementById('uUsername').value.trim();
+  const password = document.getElementById('uPassword').value;
+  const displayName = document.getElementById('uDisplayName').value.trim();
+  const role = document.getElementById('uRole').value;
+  const approvalRole = document.getElementById('uApprovalRole').value;
+  if (!username || !password || !displayName){
+    alert('لازم تملأ اسم المستخدم وكلمة المرور والاسم المعروض.');
+    return;
+  }
+  if (users.some(u=>u.username===username)){
+    alert('اسم المستخدم ده مستخدم بالفعل، اختار اسم تاني.');
+    return;
+  }
+  users.push({ id: uid(), username, password, displayName, role, approvalRole });
+  saveUsers();
+  ['uUsername','uPassword','uDisplayName'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('addUserForm').classList.add('hidden');
+  renderUsersTable();
+});
+
+function renderUsersTable(){
+  const tbody = document.getElementById('usersTbody');
+  if (!users.length){ tbody.innerHTML = '<tr><td colspan="5" class="empty">لا يوجد مستخدمين</td></tr>'; return; }
+  tbody.innerHTML = users.map(u=>{
+    const roleObj = APPROVAL_ROLES.find(r=>r.key===u.approvalRole);
+    return `<tr>
+      <td class="num" style="direction:ltr; text-align:right;">${escapeHtml(u.username)}</td>
+      <td>${escapeHtml(u.displayName)}</td>
+      <td><span class="badge ${u.role==='admin'?'st-due':'st-done'}">${u.role==='admin'?'أدمن':'مستخدم عادي'}</span></td>
+      <td>${roleObj ? escapeHtml(roleObj.label) : '—'}</td>
+      <td class="actions">
+        ${u.id===currentUser.id ? '<span style="font-size:11px;color:var(--muted);">(إنت دلوقتي)</span>' : `<button class="btn-mini btn-danger del-user" data-id="${u.id}">حذف</button>`}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+document.getElementById('usersTbody').addEventListener('click', e=>{
+  const t = e.target;
+  if (t.classList.contains('del-user')){
+    const id = t.dataset.id;
+    if (id === currentUser.id){ alert('مينفعش تحذف نفسك وإنت مسجل دخول.'); return; }
+    if (!confirm('متأكد إنك عايز تحذف المستخدم ده؟')) return;
+    users = users.filter(u=>u.id!==id);
+    saveUsers();
+    renderUsersTable();
+  }
+});
+
+// ---- boot ----
+tryAutoLogin();
+if (currentUser) showApp(); else showLogin('');
 </script>
 </body>
 </html>
