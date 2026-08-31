@@ -244,6 +244,31 @@ tbody tr:hover td { background:var(--surface-2); }
       <span class="stat-value" id="statGap">—</span>
       <span class="stat-sub" id="statGapSub"></span>
     </div>
+    <div class="stat-card">
+      <span class="stat-label">إجمالي الالتزامات</span>
+      <span class="stat-value" id="statTotalCommitCount">0</span>
+      <span class="stat-sub" id="statTotalCommitSub">0 طلب مسجّل</span>
+    </div>
+    <div class="stat-card" id="statUrgentCard">
+      <span class="stat-label">طلبات عاجلة</span>
+      <span class="stat-value neg" id="statUrgentCount">0</span>
+      <span class="stat-sub" id="statUrgentSub">مبلغها 0</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">مؤجلة</span>
+      <span class="stat-value" id="statDeferredCount">0</span>
+      <span class="stat-sub" id="statDeferredSub">مبلغها 0</span>
+    </div>
+    <div class="stat-card" id="statLateCommitCard">
+      <span class="stat-label">طلبات متأخرة</span>
+      <span class="stat-value neg" id="statLateCommitCount">0</span>
+      <span class="stat-sub" id="statLateCommitSub">مبلغها 0</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">معتمد للصرف اليوم</span>
+      <span class="stat-value pos" id="statDailyApproved">0</span>
+      <span class="stat-sub" id="statDailyApprovedSub">اعتماد كامل 4/4 ومستحق النهاردة</span>
+    </div>
   </section>
 
   <nav class="cf-tabs">
@@ -663,6 +688,35 @@ function renderStats(){
     gapVal.className = 'stat-value pos';
     gapSub.textContent = 'خلال الـ 60 يوم القادمة';
   }
+
+  const today = todayStr();
+  const unpaid = state.commitments.filter(c=>c.remainingAmount>0);
+
+  document.getElementById('statTotalCommitCount').textContent = state.commitments.length;
+  document.getElementById('statTotalCommitSub').textContent = unpaid.length + ' لسه مش متسدد';
+
+  const urgentList = unpaid.filter(c=>(c.urgency||'عادي')==='عاجل');
+  const urgentSum = urgentList.reduce((s,c)=>s+c.remainingAmount,0);
+  document.getElementById('statUrgentCount').textContent = urgentList.length;
+  document.getElementById('statUrgentSub').textContent = 'مبلغها ' + fmtMoney(urgentSum);
+  document.getElementById('statUrgentCard').classList.toggle('stat-alert', urgentList.length>0);
+
+  const deferredList = unpaid.filter(c=>(c.urgency||'عادي')==='مؤجل');
+  const deferredSum = deferredList.reduce((s,c)=>s+c.remainingAmount,0);
+  document.getElementById('statDeferredCount').textContent = deferredList.length;
+  document.getElementById('statDeferredSub').textContent = 'مبلغها ' + fmtMoney(deferredSum);
+
+  const lateCommitList = unpaid.filter(c=>isSaneDate(c.dueDate) && c.dueDate<today);
+  const lateCommitSum = lateCommitList.reduce((s,c)=>s+c.remainingAmount,0);
+  document.getElementById('statLateCommitCount').textContent = lateCommitList.length;
+  document.getElementById('statLateCommitSub').textContent = 'مبلغها ' + fmtMoney(lateCommitSum);
+  document.getElementById('statLateCommitCard').classList.toggle('stat-alert', lateCommitList.length>0);
+
+  const dailyApprovedSum = unpaid
+    .filter(c=>c.dueDate===today && APPROVAL_ROLES.every(r=>(c.approvals||{})[r.key]))
+    .reduce((s,c)=>s+c.remainingAmount,0);
+  document.getElementById('statDailyApproved').textContent = fmtMoney(dailyApprovedSum);
+
   return { cashBalance, timeline };
 }
 
