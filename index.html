@@ -242,32 +242,56 @@ body.role-accountant .certainty-select
         <button class="logout-btn" id="logoutBtn">تسجيل خروج</button>
       </div>
       <div class="cf-balance-box">
-        <label>الرصيد الافتتاحي (الخزينة/البنك)</label>
-        <div class="cf-balance-input">
-          <input type="number" id="openingBalanceInput" value="0" />
-          <span>ج.م</span>
+        <label>الأرصدة الافتتاحية (بنوك وخزائن)</label>
+        <div class="cf-balance-input" id="openAccountsBtn" style="cursor:pointer;">
+          <span id="accountsTotalHeader" style="color:var(--brass); font-family:'IBM Plex Mono',monospace; font-size:17px; font-weight:600; direction:ltr;">0</span>
+          <span>ج.م — عدّل ✎</span>
         </div>
       </div>
     </div>
   </header>
 
+  <section class="cf-panel hidden" id="accountsPanel" style="margin-bottom:20px;">
+    <div class="panel-head row-between">
+      <div>
+        <h2>الأرصدة الافتتاحية (بنوك وخزائن)</h2>
+        <p class="panel-sub">أضف كل بنك أو خزينة كبند منفصل، والإجمالي بيتجمع تلقائيًا في الرصيد الافتتاحي المستخدم بكل الحسابات.</p>
+      </div>
+      <button class="btn-primary" id="toggleAddAccount">+ إضافة حساب</button>
+    </div>
+    <div class="add-form hidden" id="addAccountForm">
+      <div class="form-grid">
+        <div class="f-field"><label>اسم الحساب</label><input id="accName" placeholder="مثال: بنك مصر - حساب جاري" /></div>
+        <div class="f-field"><label>النوع</label><select id="accType"><option>بنك</option><option>خزينة</option></select></div>
+        <div class="f-field"><label>الرصيد الافتتاحي</label><input type="number" id="accBalance" placeholder="0" /></div>
+      </div>
+      <button class="btn-primary" id="saveAccount">حفظ الحساب</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>اسم الحساب</th><th>النوع</th><th>الرصيد الافتتاحي</th><th></th></tr></thead>
+        <tbody id="accountsTbody"></tbody>
+      </table>
+    </div>
+    <p class="panel-sub" style="margin-top:10px; text-align:left; direction:ltr;">الإجمالي: <b id="accountsTotal" style="color:var(--brass); font-family:'IBM Plex Mono',monospace; font-size:15px;">0</b> ج.م</p>
+  </section>
   <section class="cf-stats">
-    <div class="stat-card">
+    <div class="stat-card clickable" id="cardBalance">
       <span class="stat-label">الرصيد الحالي الفعلي</span>
       <span class="stat-value" id="statBalance">0</span>
-      <span class="stat-sub">افتتاحي + تحصيل − سداد</span>
+      <span class="stat-sub">افتتاحي + تحصيل − سداد — دوس لعرض تفاصيل الحسابات</span>
     </div>
     <div class="stat-card clickable" id="cardUnpaid" data-filter="unpaid">
       <span class="stat-label">التزامات متبقية</span>
       <span class="stat-value neg" id="statCommit">0</span>
       <span class="stat-sub" id="statCommitSub">0 بند غير مسدد</span>
     </div>
-    <div class="stat-card">
+    <div class="stat-card clickable" id="cardInflow" data-inflow-filter="confirmed">
       <span class="stat-label">تحصيلات متوقعة</span>
       <span class="stat-value pos" id="statInflow">0</span>
       <span class="stat-sub" id="statInflowSub">0 بند غير محصّل</span>
     </div>
-    <div class="stat-card" id="statGapCard">
+    <div class="stat-card clickable" id="statGapCard">
       <span class="stat-label">أقرب فجوة تمويل</span>
       <span class="stat-value" id="statGap">—</span>
       <span class="stat-sub" id="statGapSub"></span>
@@ -297,7 +321,7 @@ body.role-accountant .certainty-select
       <span class="stat-value pos" id="statDailyApproved">0</span>
       <span class="stat-sub" id="statDailyApprovedSub">اعتماد كامل (3 تواقيع) ومستحق النهاردة</span>
     </div>
-    <div class="stat-card">
+    <div class="stat-card clickable" id="cardTotalPaid" data-filter="paid">
       <span class="stat-label">إجمالي المسدد من الالتزامات</span>
       <span class="stat-value pos" id="statTotalPaid">0</span>
       <span class="stat-sub" id="statTotalPaidSub">من إجمالي القيمة الأصلية</span>
@@ -427,6 +451,10 @@ body.role-accountant .certainty-select
     </div>
     <div class="search-row">
       <input type="text" id="inflowSearchInput" placeholder="🔍 ابحث بالاسم..." />
+    </div>
+    <div id="inflowFilterBanner" class="filter-banner hidden">
+      <span id="inflowFilterLabel"></span>
+      <button id="clearInflowFilter">إلغاء الفلتر ✕</button>
     </div>
     <div class="add-form hidden" id="addInflowForm">
       <div class="form-grid">
@@ -634,7 +662,17 @@ let state = {
   commitSearch: '',
   inflowSearch: '',
   commitCategoryFilter: null,
+  inflowCategoryFilter: null,
 };
+
+let accounts = load('accounts', []);
+// ترحيل الرصيد الافتتاحي القديم (لو موجود) إلى حساب واحد افتراضي أول مرة فقط
+if (!accounts.length && Number(state.openingBalance)){
+  accounts = [{ id: uid(), name: 'رصيد افتتاحي (منقول)', type: 'خزينة', balance: Number(state.openingBalance) }];
+  save('accounts', accounts);
+}
+function saveAccounts(){ save('accounts', accounts); }
+function totalOpeningBalance(){ return accounts.reduce((s,a)=>s+(Number(a.balance)||0),0); }
 
 let users = load('users', []);
 let currentUser = null;
@@ -667,6 +705,7 @@ function showApp(){
   document.getElementById('usersTabBtn').classList.toggle('hidden', currentUser.role!=='admin');
   document.body.classList.toggle('role-accountant', currentUser.role==='accountant');
   renderCTypeSelect();
+  renderAccountsTable();
   renderAll();
 }
 
@@ -698,7 +737,7 @@ function totals(){
   const totalRemainingInflow = state.inflows.reduce((s,f)=>s+(f.remainingAmount>0 && isSaneDate(f.expectedDate) && isConfirmedInflow(f) ? f.remainingAmount : 0),0);
   const totalPaid = state.transactions.filter(t=>t.kind==='سداد').reduce((s,t)=>s+t.amount,0);
   const totalCollected = state.transactions.filter(t=>t.kind==='تحصيل').reduce((s,t)=>s+t.amount,0);
-  const cashBalance = (Number(state.openingBalance)||0) + totalCollected - totalPaid;
+  const cashBalance = totalOpeningBalance() + totalCollected - totalPaid;
   return { totalRemainingCommit, totalRemainingInflow, cashBalance };
 }
 
@@ -986,6 +1025,7 @@ function renderCommitTable(){
   const filterLabels = {
     unpaid: 'الالتزامات غير المسددة', all: 'كل الالتزامات', urgent: 'الطلبات العاجلة',
     deferred: 'الطلبات المؤجلة', late: 'الطلبات المتأخرة', dailyApproved: 'المعتمد للصرف اليوم',
+    paid: 'الالتزامات المسددة بالكامل',
   };
   if (state.commitCategoryFilter){
     const f = state.commitCategoryFilter;
@@ -994,6 +1034,7 @@ function renderCommitTable(){
     else if (f==='deferred') allRows = allRows.filter(c=>c.remainingAmount>0 && (c.urgency||'عادي')==='مؤجل');
     else if (f==='late') allRows = allRows.filter(c=>isLateCommitment(c));
     else if (f==='dailyApproved') allRows = allRows.filter(c=>c.remainingAmount>0 && c.dueDate===today && isFullyApproved(c.approvals));
+    else if (f==='paid') allRows = allRows.filter(c=>c.remainingAmount<=0);
   }
   const banner = document.getElementById('commitFilterBanner');
   if (state.commitCategoryFilter){
@@ -1105,8 +1146,19 @@ function renderInflowTable(){
     const q = state.inflowSearch.trim().toLowerCase();
     allRows = allRows.filter(f=>f.name.toLowerCase().includes(q));
   }
+  const inflowFilterLabels = { confirmed: 'التحصيلات المؤكدة غير المحصّلة' };
+  if (state.inflowCategoryFilter){
+    if (state.inflowCategoryFilter==='confirmed') allRows = allRows.filter(f=>f.remainingAmount>0 && isConfirmedInflow(f));
+  }
+  const inflowBanner = document.getElementById('inflowFilterBanner');
+  if (state.inflowCategoryFilter){
+    inflowBanner.classList.remove('hidden');
+    document.getElementById('inflowFilterLabel').textContent = `فلتر نشط: ${inflowFilterLabels[state.inflowCategoryFilter]} (${allRows.length} نتيجة)`;
+  } else {
+    inflowBanner.classList.add('hidden');
+  }
   if (!allRows.length){
-    tbody.innerHTML = `<tr><td colspan="9" class="empty">${state.inflowSearch.trim() ? 'مفيش نتائج مطابقة للبحث' : 'لا توجد تدفقات داخلة مسجّلة بعد'}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty">${state.inflowSearch.trim() || state.inflowCategoryFilter ? 'مفيش نتائج مطابقة' : 'لا توجد تدفقات داخلة مسجّلة بعد'}</td></tr>`;
     renderBulkBar('inflow');
     renderPager('inflow', 0, 0);
     return;
@@ -1314,10 +1366,55 @@ function renderAll(){
 }
 
 // ---- events ----
-document.getElementById('openingBalanceInput').value = state.openingBalance;
-document.getElementById('openingBalanceInput').addEventListener('change', e=>{
-  state.openingBalance = e.target.value===''?0:parseFloat(e.target.value);
-  persistAndRenderData();
+
+document.getElementById('openAccountsBtn').addEventListener('click', ()=>{
+  document.getElementById('accountsPanel').classList.toggle('hidden');
+});
+document.getElementById('cardBalance').addEventListener('click', ()=>{
+  document.getElementById('accountsPanel').classList.remove('hidden');
+  document.getElementById('accountsPanel').scrollIntoView({ behavior:'smooth', block:'start' });
+});
+document.getElementById('toggleAddAccount').addEventListener('click', ()=>{
+  document.getElementById('addAccountForm').classList.toggle('hidden');
+});
+document.getElementById('saveAccount').addEventListener('click', ()=>{
+  const name = document.getElementById('accName').value.trim();
+  const type = document.getElementById('accType').value;
+  const balance = parseFloat(document.getElementById('accBalance').value);
+  if (!name || isNaN(balance)){ alert('اكتب اسم الحساب والرصيد الافتتاحي.'); return; }
+  accounts.push({ id: uid(), name, type, balance });
+  saveAccounts();
+  ['accName','accBalance'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('addAccountForm').classList.add('hidden');
+  renderAccountsTable();
+  renderAll();
+});
+function renderAccountsTable(){
+  const tbody = document.getElementById('accountsTbody');
+  if (!accounts.length){
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">لسه معملتش أي حساب بنكي أو خزينة. اضغط "+ إضافة حساب".</td></tr>';
+  } else {
+    tbody.innerHTML = accounts.map(a=>`
+      <tr>
+        <td>${escapeHtml(a.name)}</td>
+        <td>${escapeHtml(a.type)}</td>
+        <td class="num">${fmtMoney(a.balance)}</td>
+        <td class="actions"><button class="btn-mini btn-danger del-account" data-id="${a.id}">حذف</button></td>
+      </tr>`).join('');
+  }
+  const total = totalOpeningBalance();
+  document.getElementById('accountsTotal').textContent = fmtMoney(total);
+  document.getElementById('accountsTotalHeader').textContent = fmtMoney(total);
+}
+document.getElementById('accountsTbody').addEventListener('click', e=>{
+  const t = e.target;
+  if (t.classList.contains('del-account')){
+    if (!confirm('متأكد إنك عايز تحذف الحساب ده؟')) return;
+    accounts = accounts.filter(a=>a.id!==t.dataset.id);
+    saveAccounts();
+    renderAccountsTable();
+    renderAll();
+  }
 });
 
 document.querySelectorAll('.tab-btn').forEach(btn=>{
@@ -1667,7 +1764,7 @@ document.getElementById('inflowSearchInput').addEventListener('input', e=>{
   renderInflowTable();
 });
 
-document.querySelectorAll('.stat-card.clickable').forEach(card=>{
+document.querySelectorAll('.stat-card.clickable[data-filter]').forEach(card=>{
   card.addEventListener('click', ()=>{
     state.commitCategoryFilter = card.dataset.filter;
     state.commitPage = 0;
@@ -1684,6 +1781,35 @@ document.getElementById('clearCommitFilter').addEventListener('click', ()=>{
   state.commitCategoryFilter = null;
   state.commitPage = 0;
   renderCommitTable();
+});
+
+document.querySelectorAll('.stat-card.clickable[data-inflow-filter]').forEach(card=>{
+  card.addEventListener('click', ()=>{
+    state.inflowCategoryFilter = card.dataset.inflowFilter;
+    state.inflowPage = 0;
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelector('.tab-btn[data-tab="inflows"]').classList.add('active');
+    ['overview','commitments','inflows','ledger','users'].forEach(t=>{
+      document.getElementById('panel-'+t).classList.toggle('hidden', t!=='inflows');
+    });
+    state.tab = 'inflows';
+    renderInflowTable();
+  });
+});
+document.getElementById('clearInflowFilter').addEventListener('click', ()=>{
+  state.inflowCategoryFilter = null;
+  state.inflowPage = 0;
+  renderInflowTable();
+});
+
+document.getElementById('statGapCard').addEventListener('click', ()=>{
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelector('.tab-btn[data-tab="overview"]').classList.add('active');
+  ['overview','commitments','inflows','ledger','users'].forEach(t=>{
+    document.getElementById('panel-'+t).classList.toggle('hidden', t!=='overview');
+  });
+  state.tab = 'overview';
+  document.getElementById('gapPeriodsBox').scrollIntoView({ behavior:'smooth', block:'center' });
 });
 
 // ---- Excel import for inflows ----
