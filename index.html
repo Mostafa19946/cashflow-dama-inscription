@@ -32,6 +32,10 @@ body { margin:0; background: var(--bg); color: var(--ink); font-family:'IBM Plex
 .cf-stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(190px,1fr)); gap:14px; margin-bottom:22px; }
 .stat-card { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px 18px; display:flex; flex-direction:column; gap:6px; }
 .stat-alert { border-color:rgba(204,91,66,0.45); background:linear-gradient(180deg, rgba(204,91,66,0.08), var(--surface)); }
+.stat-card.clickable { cursor:pointer; transition:border-color .15s, transform .1s; }
+.stat-card.clickable:hover { border-color:var(--brass); transform:translateY(-1px); }
+.filter-banner { display:flex; align-items:center; justify-content:space-between; gap:10px; background:var(--brass-dim); border:1px solid rgba(201,162,39,0.4); border-radius:8px; padding:10px 14px; margin-bottom:14px; font-size:13px; color:var(--brass); }
+.filter-banner button { background:none; border:1px solid var(--brass); color:var(--brass); border-radius:6px; padding:4px 10px; font-size:11.5px; cursor:pointer; }
 .stat-label { font-size:12px; color:var(--muted); }
 .stat-value { font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:600; direction:ltr; }
 .stat-sub { font-size:11px; color:var(--muted-2); }
@@ -167,6 +171,30 @@ tbody tr:hover td { background:var(--surface-2); }
 .logout-btn { background:none; border:1px solid var(--line-strong); color:var(--muted); border-radius:6px; padding:5px 11px; font-size:11.5px; cursor:pointer; }
 .logout-btn:hover { border-color:var(--deficit); color:var(--deficit); }
 
+/* صلاحيات المحاسب: طلب دفع (إضافة التزام) + تسجيل تحصيل فقط */
+body.role-accountant .tab-btn[data-tab="ledger"],
+body.role-accountant #toggleImportCommit,
+body.role-accountant #clearAllCommits,
+body.role-accountant #bulkBarCommit,
+body.role-accountant #commitSelectAll,
+body.role-accountant .commit-checkbox,
+body.role-accountant .edit-toggle-commit,
+body.role-accountant .del-commit,
+body.role-accountant .pay-toggle,
+body.role-accountant .approval-toggle,
+body.role-accountant #toggleAddInflow,
+body.role-accountant #toggleImportInflow,
+body.role-accountant #clearAllInflows,
+body.role-accountant #bulkBarInflow,
+body.role-accountant #inflowSelectAll,
+body.role-accountant .inflow-checkbox,
+body.role-accountant .edit-toggle-inflow,
+body.role-accountant .del-inflow
+{ display:none !important; }
+body.role-accountant .urgency-select,
+body.role-accountant .certainty-select
+{ pointer-events:none; background:var(--surface-2); opacity:0.75; }
+
 @media (max-width:900px) {
   .cf-stats { grid-template-columns:repeat(2,1fr); }
   .form-grid { grid-template-columns:1fr 1fr; }
@@ -229,7 +257,7 @@ tbody tr:hover td { background:var(--surface-2); }
       <span class="stat-value" id="statBalance">0</span>
       <span class="stat-sub">افتتاحي + تحصيل − سداد</span>
     </div>
-    <div class="stat-card">
+    <div class="stat-card clickable" id="cardUnpaid" data-filter="unpaid">
       <span class="stat-label">التزامات متبقية</span>
       <span class="stat-value neg" id="statCommit">0</span>
       <span class="stat-sub" id="statCommitSub">0 بند غير مسدد</span>
@@ -244,30 +272,35 @@ tbody tr:hover td { background:var(--surface-2); }
       <span class="stat-value" id="statGap">—</span>
       <span class="stat-sub" id="statGapSub"></span>
     </div>
-    <div class="stat-card">
+    <div class="stat-card clickable" id="cardAll" data-filter="all">
       <span class="stat-label">إجمالي الالتزامات</span>
       <span class="stat-value" id="statTotalCommitCount">0</span>
       <span class="stat-sub" id="statTotalCommitSub">0 طلب مسجّل</span>
     </div>
-    <div class="stat-card" id="statUrgentCard">
+    <div class="stat-card clickable" id="statUrgentCard" data-filter="urgent">
       <span class="stat-label">طلبات عاجلة</span>
       <span class="stat-value neg" id="statUrgentCount">0</span>
       <span class="stat-sub" id="statUrgentSub">مبلغها 0</span>
     </div>
-    <div class="stat-card">
+    <div class="stat-card clickable" id="cardDeferred" data-filter="deferred">
       <span class="stat-label">مؤجلة</span>
       <span class="stat-value" id="statDeferredCount">0</span>
       <span class="stat-sub" id="statDeferredSub">مبلغها 0</span>
     </div>
-    <div class="stat-card" id="statLateCommitCard">
+    <div class="stat-card clickable" id="statLateCommitCard" data-filter="late">
       <span class="stat-label">طلبات متأخرة</span>
       <span class="stat-value neg" id="statLateCommitCount">0</span>
       <span class="stat-sub" id="statLateCommitSub">مبلغها 0</span>
     </div>
-    <div class="stat-card">
+    <div class="stat-card clickable" id="cardDailyApproved" data-filter="dailyApproved">
       <span class="stat-label">معتمد للصرف اليوم</span>
       <span class="stat-value pos" id="statDailyApproved">0</span>
-      <span class="stat-sub" id="statDailyApprovedSub">اعتماد كامل 4/4 ومستحق النهاردة</span>
+      <span class="stat-sub" id="statDailyApprovedSub">اعتماد كامل (3 تواقيع) ومستحق النهاردة</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">إجمالي المسدد من الالتزامات</span>
+      <span class="stat-value pos" id="statTotalPaid">0</span>
+      <span class="stat-sub" id="statTotalPaidSub">من إجمالي القيمة الأصلية</span>
     </div>
   </section>
 
@@ -324,17 +357,20 @@ tbody tr:hover td { background:var(--surface-2); }
     <div class="search-row">
       <input type="text" id="commitSearchInput" placeholder="🔍 ابحث بالاسم..." />
     </div>
+    <div id="commitFilterBanner" class="filter-banner hidden">
+      <span id="commitFilterLabel"></span>
+      <button id="clearCommitFilter">إلغاء الفلتر ✕</button>
+    </div>
     <div class="add-form hidden" id="addCommitForm">
       <div class="form-grid">
         <div class="f-field"><label>اسم الالتزام</label><input id="cName" placeholder="مثال: مورد الخامات - شركة النور" /></div>
         <div class="f-field"><label>النوع</label>
-          <select id="cType">
-            <option>مورد</option><option>قسط تمويل</option><option>إيجار</option>
-            <option>رواتب</option><option>ضرائب</option><option>تأمينات</option><option>أخرى</option>
-          </select>
+          <select id="cType"></select>
+          <input type="text" id="cNewType" class="hidden" placeholder="اكتب اسم النوع الجديد" style="margin-top:6px;" />
         </div>
         <div class="f-field"><label>رقم طلب الالتزام</label><input id="cRequestNumber" placeholder="مثال: REQ-1024" /></div>
         <div class="f-field"><label>رقم طلب الدفع</label><input id="cPaymentRequestNumber" placeholder="مثال: PAY-2045" /></div>
+        <div class="f-field"><label>تاريخ تقديم طلب الدفع</label><input type="date" id="cPaymentRequestDate" /></div>
         <div class="f-field"><label>تاريخ تقديم الطلب</label><input type="date" id="cRequestDate" /></div>
         <div class="f-field"><label>مدى الأهمية</label>
           <select id="cUrgency">
@@ -398,6 +434,9 @@ tbody tr:hover td { background:var(--surface-2); }
         <div class="f-field"><label>الجهة / المصدر</label><input id="fSource" placeholder="اختياري" /></div>
         <div class="f-field"><label>المبلغ المتوقع</label><input type="number" id="fAmount" placeholder="0" /></div>
         <div class="f-field"><label>التاريخ المتوقع</label><input type="date" id="fDate" /></div>
+        <div class="f-field"><label>حالة التحصيل</label>
+          <select id="fCertainty"><option>مؤكد</option><option>محتمل</option><option>قيد التحقق</option></select>
+        </div>
         <div class="f-field f-wide"><label>ملاحظات</label><input id="fNotes" placeholder="اختياري" /></div>
       </div>
       <button class="btn-primary" id="saveInflow">حفظ التدفق</button>
@@ -422,7 +461,7 @@ tbody tr:hover td { background:var(--surface-2); }
 
     <div class="table-wrap">
       <table>
-        <thead><tr><th style="width:30px;"><input type="checkbox" id="inflowSelectAll" /></th><th>الاسم</th><th>المصدر</th><th>التاريخ المتوقع</th><th>المبلغ المتوقع</th><th>المتبقي</th><th>الحالة</th><th></th></tr></thead>
+        <thead><tr><th style="width:30px;"><input type="checkbox" id="inflowSelectAll" /></th><th>الاسم</th><th>المصدر</th><th>التاريخ المتوقع</th><th>المبلغ المتوقع</th><th>المتبقي</th><th>حالة التحصيل</th><th>الحالة</th><th></th></tr></thead>
         <tbody id="inflowTbody"></tbody>
       </table>
     </div>
@@ -468,7 +507,7 @@ tbody tr:hover td { background:var(--surface-2); }
         <div class="f-field"><label>كلمة المرور</label><input type="text" id="uPassword" placeholder="اكتب كلمة مرور" /></div>
         <div class="f-field"><label>الاسم المعروض</label><input id="uDisplayName" placeholder="مثال: أحمد محمد" /></div>
         <div class="f-field"><label>نوع الصلاحية</label>
-          <select id="uRole"><option value="user">مستخدم عادي</option><option value="admin">مستخدم أساسي (Admin)</option></select>
+          <select id="uRole"><option value="user">مستخدم عادي</option><option value="accountant">محاسب (طلب دفع + تسجيل تحصيل فقط)</option><option value="admin">مستخدم أساسي (Admin)</option></select>
         </div>
         <div class="f-field"><label>دوره في سلسلة الاعتماد</label>
           <select id="uApprovalRole">
@@ -497,7 +536,18 @@ tbody tr:hover td { background:var(--surface-2); }
 <script>
 const MONTHS_AR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const COMMIT_TYPES = ["مورد","قسط تمويل","إيجار","رواتب","ضرائب","تأمينات","أخرى"];
+let customTypes = load('customTypes', []);
+function allCommitTypes(){ return COMMIT_TYPES.concat(customTypes); }
+function typeSelectOptionsHtml(current){
+  let html = allCommitTypes().map(o=>`<option value="${escapeAttr(o)}" ${o===current?'selected':''}>${escapeHtml(o)}</option>`).join('');
+  html += `<option value="__new__">+ إضافة نوع جديد...</option>`;
+  return html;
+}
+function renderCTypeSelect(){
+  document.getElementById('cType').innerHTML = typeSelectOptionsHtml(allCommitTypes()[0]);
+}
 const URGENCY_LEVELS = ["عادي","مرتفع","عاجل","مؤجل"];
+const CERTAINTY_LEVELS = ["مؤكد","محتمل","قيد التحقق"];
 const APPROVAL_ROLES = [
   { key: 'accountsManager', label: 'مدير الحسابات' },
   { key: 'financialManager', label: 'مدير القطاع المالي' },
@@ -508,6 +558,32 @@ function emptyApprovals(){
   const o = {};
   APPROVAL_ROLES.forEach(r => o[r.key] = false);
   return o;
+}
+const APPROVAL_CASCADE_CHILDREN = {
+  accountsManager: ['financialManager','viceChairman','chairman'],
+  financialManager: ['viceChairman','chairman'],
+  viceChairman: [],
+  chairman: [],
+};
+function approvalPrereqOk(approvals, role){
+  if (role==='financialManager') return !!approvals.accountsManager;
+  if (role==='viceChairman' || role==='chairman') return !!approvals.financialManager;
+  return true;
+}
+function cascadeResetChildren(approvals, role){
+  (APPROVAL_CASCADE_CHILDREN[role]||[]).forEach(k=>approvals[k]=false);
+}
+function isFullyApproved(approvals){
+  approvals = approvals || {};
+  return !!approvals.accountsManager && !!approvals.financialManager && !!(approvals.viceChairman || approvals.chairman);
+}
+function approvalProgressCount(approvals){
+  approvals = approvals || {};
+  let n = 0;
+  if (approvals.accountsManager) n++;
+  if (approvals.financialManager) n++;
+  if (approvals.viceChairman || approvals.chairman) n++;
+  return n;
 }
 function daysBetween(dateA, dateB){
   if (!dateA || !dateB) return null;
@@ -557,6 +633,7 @@ let state = {
   inflowPage: 0,
   commitSearch: '',
   inflowSearch: '',
+  commitCategoryFilter: null,
 };
 
 let users = load('users', []);
@@ -586,8 +663,10 @@ function showApp(){
   document.getElementById('currentUserName').textContent = currentUser.displayName || currentUser.username;
   const roleTag = document.getElementById('currentUserRoleTag');
   const roleObj = APPROVAL_ROLES.find(r=>r.key===currentUser.approvalRole);
-  roleTag.textContent = currentUser.role==='admin' ? 'أدمن' : (roleObj ? roleObj.label : 'مستخدم');
+  roleTag.textContent = currentUser.role==='admin' ? 'أدمن' : currentUser.role==='accountant' ? 'محاسب' : (roleObj ? roleObj.label : 'مستخدم');
   document.getElementById('usersTabBtn').classList.toggle('hidden', currentUser.role!=='admin');
+  document.body.classList.toggle('role-accountant', currentUser.role==='accountant');
+  renderCTypeSelect();
   renderAll();
 }
 
@@ -595,6 +674,7 @@ function showLogin(msg){
   document.getElementById('app').classList.add('hidden');
   document.getElementById('loginScreen').classList.remove('hidden');
   document.getElementById('loginError').textContent = msg || '';
+  document.body.classList.remove('role-accountant');
 }
 
 function persistAndRenderData(){
@@ -611,9 +691,11 @@ function isSaneDate(dateStr){
   return !isNaN(y) && y>=2015 && y<=2045;
 }
 
+function isConfirmedInflow(f){ return (f.certainty||'مؤكد')==='مؤكد'; }
+
 function totals(){
   const totalRemainingCommit = state.commitments.reduce((s,c)=>s+Math.max(0,c.remainingAmount),0);
-  const totalRemainingInflow = state.inflows.reduce((s,f)=>s+(f.remainingAmount>0 && isSaneDate(f.expectedDate) ? f.remainingAmount : 0),0);
+  const totalRemainingInflow = state.inflows.reduce((s,f)=>s+(f.remainingAmount>0 && isSaneDate(f.expectedDate) && isConfirmedInflow(f) ? f.remainingAmount : 0),0);
   const totalPaid = state.transactions.filter(t=>t.kind==='سداد').reduce((s,t)=>s+t.amount,0);
   const totalCollected = state.transactions.filter(t=>t.kind==='تحصيل').reduce((s,t)=>s+t.amount,0);
   const cashBalance = (Number(state.openingBalance)||0) + totalCollected - totalPaid;
@@ -626,7 +708,7 @@ function buildTimeline(cashBalance){
 
   const inflowByDate = new Map();
   for (const f of state.inflows){
-    if (f.remainingAmount>0) inflowByDate.set(f.expectedDate, (inflowByDate.get(f.expectedDate)||0)+f.remainingAmount);
+    if (f.remainingAmount>0 && isConfirmedInflow(f)) inflowByDate.set(f.expectedDate, (inflowByDate.get(f.expectedDate)||0)+f.remainingAmount);
   }
   const commitByDate = new Map();
   for (const c of state.commitments){
@@ -646,10 +728,26 @@ function buildTimeline(cashBalance){
   return arr;
 }
 
+const PAYMENT_REQUEST_LATE_DAYS = 15;
+function daysSincePaymentRequest(c){
+  if (!c.paymentRequestDate || !isSaneDate(c.paymentRequestDate)) return null;
+  return daysBetween(c.paymentRequestDate, todayStr());
+}
+function isLateCommitment(c){
+  if (c.remainingAmount<=0) return false;
+  if (isSaneDate(c.dueDate) && c.dueDate < todayStr()) return true;
+  const d = daysSincePaymentRequest(c);
+  if (d!=null && d >= PAYMENT_REQUEST_LATE_DAYS) return true;
+  return false;
+}
 function commitStatus(c){
   if (c.remainingAmount<=0) return {label:'مسدد', cls:'st-done'};
   if (!isSaneDate(c.dueDate)) return {label:'تاريخ غير صحيح ⚠️', cls:'st-late'};
-  if (c.dueDate < todayStr()) return {label:'متأخر', cls:'st-late'};
+  if (isLateCommitment(c)){
+    const d = daysSincePaymentRequest(c);
+    if (d!=null && d>=PAYMENT_REQUEST_LATE_DAYS && !(c.dueDate<todayStr())) return {label:`متأخر (${d} يوم من طلب الدفع)`, cls:'st-late'};
+    return {label:'متأخر', cls:'st-late'};
+  }
   return {label:'مستحق', cls:'st-due'};
 }
 function inflowStatus(f){
@@ -672,7 +770,7 @@ function renderStats(){
   document.getElementById('statCommitSub').textContent = state.commitments.filter(c=>c.remainingAmount>0).length + ' بند غير مسدد';
 
   document.getElementById('statInflow').textContent = fmtMoney(totalRemainingInflow);
-  document.getElementById('statInflowSub').textContent = state.inflows.filter(f=>f.remainingAmount>0).length + ' بند غير محصّل';
+  document.getElementById('statInflowSub').textContent = state.inflows.filter(f=>f.remainingAmount>0 && isConfirmedInflow(f)).length + ' بند مؤكد غير محصّل';
 
   const gapCard = document.getElementById('statGapCard');
   const gapVal = document.getElementById('statGap');
@@ -706,16 +804,21 @@ function renderStats(){
   document.getElementById('statDeferredCount').textContent = deferredList.length;
   document.getElementById('statDeferredSub').textContent = 'مبلغها ' + fmtMoney(deferredSum);
 
-  const lateCommitList = unpaid.filter(c=>isSaneDate(c.dueDate) && c.dueDate<today);
+  const lateCommitList = unpaid.filter(c=>isLateCommitment(c));
   const lateCommitSum = lateCommitList.reduce((s,c)=>s+c.remainingAmount,0);
   document.getElementById('statLateCommitCount').textContent = lateCommitList.length;
   document.getElementById('statLateCommitSub').textContent = 'مبلغها ' + fmtMoney(lateCommitSum);
   document.getElementById('statLateCommitCard').classList.toggle('stat-alert', lateCommitList.length>0);
 
   const dailyApprovedSum = unpaid
-    .filter(c=>c.dueDate===today && APPROVAL_ROLES.every(r=>(c.approvals||{})[r.key]))
+    .filter(c=>c.dueDate===today && isFullyApproved(c.approvals))
     .reduce((s,c)=>s+c.remainingAmount,0);
   document.getElementById('statDailyApproved').textContent = fmtMoney(dailyApprovedSum);
+
+  const totalOriginal = state.commitments.reduce((s,c)=>s+c.totalAmount,0);
+  const totalPaidCommit = state.commitments.reduce((s,c)=>s+(c.totalAmount-c.remainingAmount),0);
+  document.getElementById('statTotalPaid').textContent = fmtMoney(totalPaidCommit);
+  document.getElementById('statTotalPaidSub').textContent = `من إجمالي ${fmtMoney(totalOriginal)} ج.م الأصلية`;
 
   return { cashBalance, timeline };
 }
@@ -879,8 +982,28 @@ function renderCommitTable(){
     const q = state.commitSearch.trim().toLowerCase();
     allRows = allRows.filter(c=>c.name.toLowerCase().includes(q));
   }
+  const today = todayStr();
+  const filterLabels = {
+    unpaid: 'الالتزامات غير المسددة', all: 'كل الالتزامات', urgent: 'الطلبات العاجلة',
+    deferred: 'الطلبات المؤجلة', late: 'الطلبات المتأخرة', dailyApproved: 'المعتمد للصرف اليوم',
+  };
+  if (state.commitCategoryFilter){
+    const f = state.commitCategoryFilter;
+    if (f==='unpaid') allRows = allRows.filter(c=>c.remainingAmount>0);
+    else if (f==='urgent') allRows = allRows.filter(c=>c.remainingAmount>0 && (c.urgency||'عادي')==='عاجل');
+    else if (f==='deferred') allRows = allRows.filter(c=>c.remainingAmount>0 && (c.urgency||'عادي')==='مؤجل');
+    else if (f==='late') allRows = allRows.filter(c=>isLateCommitment(c));
+    else if (f==='dailyApproved') allRows = allRows.filter(c=>c.remainingAmount>0 && c.dueDate===today && isFullyApproved(c.approvals));
+  }
+  const banner = document.getElementById('commitFilterBanner');
+  if (state.commitCategoryFilter){
+    banner.classList.remove('hidden');
+    document.getElementById('commitFilterLabel').textContent = `فلتر نشط: ${filterLabels[state.commitCategoryFilter]} (${allRows.length} نتيجة)`;
+  } else {
+    banner.classList.add('hidden');
+  }
   if (!allRows.length){
-    tbody.innerHTML = `<tr><td colspan="12" class="empty">${state.commitSearch.trim() ? 'مفيش نتائج مطابقة للبحث' : 'لا توجد التزامات مسجّلة بعد'}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="12" class="empty">${state.commitSearch.trim() || state.commitCategoryFilter ? 'مفيش نتائج مطابقة' : 'لا توجد التزامات مسجّلة بعد'}</td></tr>`;
     renderBulkBar('commit');
     renderPager('commit', 0, 0);
     return;
@@ -895,7 +1018,8 @@ function renderCommitTable(){
     const checked = state.selectedCommitIds.has(c.id) ? 'checked' : '';
     const urgency = c.urgency || 'عادي';
     const approvals = c.approvals || emptyApprovals();
-    const approvedCount = APPROVAL_ROLES.filter(r=>approvals[r.key]).length;
+    const approvedCount = approvalProgressCount(approvals);
+    const fullyApproved = isFullyApproved(approvals);
     const days = daysBetween(c.requestDate, c.dueDate);
     return `<tr>
       <td><input type="checkbox" class="commit-checkbox" data-id="${c.id}" ${checked} /></td>
@@ -907,7 +1031,7 @@ function renderCommitTable(){
       <td class="num">${days!=null ? days+' يوم' : '—'}</td>
       <td class="num">${fmtMoney(c.totalAmount)}</td>
       <td class="num neg">${fmtMoney(c.remainingAmount)}</td>
-      <td><button class="btn-mini approval-toggle" data-id="${c.id}">${approvedCount}/4 ✅</button></td>
+      <td><button class="btn-mini approval-toggle" data-id="${c.id}">${approvedCount}/3 ${fullyApproved?'✅':''}</button></td>
       <td><span class="badge ${st.cls}">${st.label}</span></td>
       <td class="actions">
         ${c.remainingAmount>0 ? `<button class="btn-mini pay-toggle" data-id="${c.id}">تسجيل سداد</button>` : ''}
@@ -918,12 +1042,13 @@ function renderCommitTable(){
     <tr class="pay-row hidden" id="payrow-${c.id}">
       <td colspan="12">
         <div class="pay-inline">
-          <label>المبلغ المسدد</label>
-          <input type="number" class="pay-amount" data-id="${c.id}" value="${c.remainingAmount}" />
+          <label>المبلغ المسدد (عدّل الرقم لتسجيل دفعة جزئية)</label>
+          <input type="number" class="pay-amount" data-id="${c.id}" value="${c.remainingAmount}" max="${c.remainingAmount}" min="0.01" step="0.01" />
           <label>تاريخ السداد</label>
           <input type="date" class="pay-date" data-id="${c.id}" value="${todayStr()}" />
           <button class="btn-primary btn-sm pay-confirm" data-id="${c.id}">تأكيد السداد</button>
         </div>
+        <p class="panel-sub" style="margin-top:6px;">مسدد حتى الآن: ${fmtMoney(c.totalAmount - c.remainingAmount)} من ${fmtMoney(c.totalAmount)} — سيب الرقم زي ما هو لسداد كامل، أو قلّله لتسجيل دفعة جزئية والباقي هيفضل مستحق.</p>
       </td>
     </tr>
     <tr class="approval-row hidden" id="approvalrow-${c.id}">
@@ -931,23 +1056,28 @@ function renderCommitTable(){
         <div class="approval-steps">
           ${APPROVAL_ROLES.map((r,i)=>{
             const done = !!approvals[r.key];
-            const prevDone = i===0 || !!approvals[APPROVAL_ROLES[i-1].key];
-            return `<label class="approval-step ${done?'done':''} ${!prevDone && !done ? 'locked':''}">
-              <input type="checkbox" class="approval-check" data-id="${c.id}" data-role="${r.key}" data-step="${i}" ${done?'checked':''} ${(!prevDone && !done)?'disabled':''} />
-              <span>${i+1}. ${r.label}</span>
+            const prereqOk = approvalPrereqOk(approvals, r.key);
+            const isAltPair = r.key==='viceChairman' || r.key==='chairman';
+            return `<label class="approval-step ${done?'done':''} ${!prereqOk && !done ? 'locked':''}">
+              <input type="checkbox" class="approval-check" data-id="${c.id}" data-role="${r.key}" ${done?'checked':''} ${(!prereqOk && !done)?'disabled':''} />
+              <span>${i+1}. ${r.label}${isAltPair?' (يكفي واحد منهم)':''}</span>
             </label>`;
           }).join('')}
         </div>
-        <p class="panel-sub" style="margin-top:8px;">الاعتماد بيتم بالترتيب: مدير الحسابات ← مدير القطاع المالي ← نائب رئيس مجلس الإدارة ← رئيس مجلس الإدارة. إلغاء اعتماد أي خطوة بيلغي اللي بعدها تلقائيًا.</p>
+        <p class="panel-sub" style="margin-top:8px;">يكفي 3 توقيعات: مدير الحسابات + مدير القطاع المالي + واحد بس من (نائب رئيس مجلس الإدارة أو رئيس مجلس الإدارة). إلغاء اعتماد مدير الحسابات أو المالي بيلغي اللي بعده تلقائيًا.</p>
       </td>
     </tr>
     <tr class="edit-row hidden" id="editrow-commit-${c.id}">
       <td colspan="12">
         <div class="form-grid">
           <div class="f-field"><label>اسم الالتزام</label><input type="text" class="edit-name" data-id="${c.id}" value="${escapeAttr(c.name)}" /></div>
-          <div class="f-field"><label>النوع</label><select class="edit-type" data-id="${c.id}">${optionsHtml(COMMIT_TYPES, c.type)}</select></div>
+          <div class="f-field"><label>النوع</label>
+            <select class="edit-type" data-id="${c.id}">${typeSelectOptionsHtml(c.type)}</select>
+            <input type="text" class="edit-new-type hidden" data-id="${c.id}" placeholder="اكتب اسم النوع الجديد" style="margin-top:6px;" />
+          </div>
           <div class="f-field"><label>رقم طلب الالتزام</label><input type="text" class="edit-request-number" data-id="${c.id}" value="${escapeAttr(c.requestNumber)}" /></div>
           <div class="f-field"><label>رقم طلب الدفع</label><input type="text" class="edit-payment-request-number" data-id="${c.id}" value="${escapeAttr(c.paymentRequestNumber)}" /></div>
+          <div class="f-field"><label>تاريخ تقديم طلب الدفع</label><input type="date" class="edit-payment-request-date" data-id="${c.id}" value="${c.paymentRequestDate||''}" /></div>
           <div class="f-field"><label>تاريخ تقديم الطلب</label><input type="date" class="edit-request-date" data-id="${c.id}" value="${c.requestDate||''}" /></div>
           <div class="f-field"><label>مدى الأهمية</label><select class="edit-urgency" data-id="${c.id}">${optionsHtml(URGENCY_LEVELS, urgency)}</select></div>
           <div class="f-field"><label>القيمة الإجمالية</label><input type="number" class="edit-total" data-id="${c.id}" value="${c.totalAmount}" /></div>
@@ -976,7 +1106,7 @@ function renderInflowTable(){
     allRows = allRows.filter(f=>f.name.toLowerCase().includes(q));
   }
   if (!allRows.length){
-    tbody.innerHTML = `<tr><td colspan="8" class="empty">${state.inflowSearch.trim() ? 'مفيش نتائج مطابقة للبحث' : 'لا توجد تدفقات داخلة مسجّلة بعد'}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty">${state.inflowSearch.trim() ? 'مفيش نتائج مطابقة للبحث' : 'لا توجد تدفقات داخلة مسجّلة بعد'}</td></tr>`;
     renderBulkBar('inflow');
     renderPager('inflow', 0, 0);
     return;
@@ -989,6 +1119,7 @@ function renderInflowTable(){
   tbody.innerHTML = rows.map(f=>{
     const st = inflowStatus(f);
     const checked = state.selectedInflowIds.has(f.id) ? 'checked' : '';
+    const certainty = f.certainty || 'مؤكد';
     return `<tr>
       <td><input type="checkbox" class="inflow-checkbox" data-id="${f.id}" ${checked} /></td>
       <td>${escapeHtml(f.name)}${f.notes?`<div class="td-note">${escapeHtml(f.notes)}</div>`:''}</td>
@@ -996,6 +1127,7 @@ function renderInflowTable(){
       <td style="direction:ltr; text-align:left;">${fmtDateLabel(f.expectedDate)}</td>
       <td class="num">${fmtMoney(f.expectedAmount)}</td>
       <td class="num pos">${fmtMoney(f.remainingAmount)}</td>
+      <td><select class="certainty-select" data-id="${f.id}">${optionsHtml(CERTAINTY_LEVELS, certainty)}</select></td>
       <td><span class="badge ${st.cls}">${st.label}</span></td>
       <td class="actions">
         ${f.remainingAmount>0 ? `<button class="btn-mini collect-toggle" data-id="${f.id}">تسجيل تحصيل</button>` : ''}
@@ -1004,24 +1136,26 @@ function renderInflowTable(){
       </td>
     </tr>
     <tr class="pay-row hidden" id="collectrow-${f.id}">
-      <td colspan="8">
+      <td colspan="9">
         <div class="pay-inline">
-          <label>المبلغ المحصّل</label>
-          <input type="number" class="collect-amount" data-id="${f.id}" value="${f.remainingAmount}" />
+          <label>المبلغ المحصّل (عدّل الرقم لتسجيل تحصيل جزئي)</label>
+          <input type="number" class="collect-amount" data-id="${f.id}" value="${f.remainingAmount}" max="${f.remainingAmount}" min="0.01" step="0.01" />
           <label>تاريخ التحصيل</label>
           <input type="date" class="collect-date" data-id="${f.id}" value="${todayStr()}" />
           <button class="btn-primary btn-sm collect-confirm" data-id="${f.id}">تأكيد التحصيل</button>
         </div>
+        <p class="panel-sub" style="margin-top:6px;">محصّل حتى الآن: ${fmtMoney(f.expectedAmount - f.remainingAmount)} من ${fmtMoney(f.expectedAmount)} — سيب الرقم زي ما هو لتحصيل كامل، أو قلّله لتسجيل دفعة جزئية.</p>
       </td>
     </tr>
     <tr class="edit-row hidden" id="editrow-inflow-${f.id}">
-      <td colspan="8">
+      <td colspan="9">
         <div class="form-grid">
           <div class="f-field"><label>الاسم / الوصف</label><input type="text" class="edit-name" data-id="${f.id}" value="${escapeAttr(f.name)}" /></div>
           <div class="f-field"><label>الجهة / المصدر</label><input type="text" class="edit-source" data-id="${f.id}" value="${escapeAttr(f.source)}" /></div>
           <div class="f-field"><label>المبلغ المتوقع</label><input type="number" class="edit-expected" data-id="${f.id}" value="${f.expectedAmount}" /></div>
           <div class="f-field"><label>المتبقي</label><input type="number" class="edit-remaining" data-id="${f.id}" value="${f.remainingAmount}" /></div>
           <div class="f-field"><label>التاريخ المتوقع</label><input type="date" class="edit-date" data-id="${f.id}" value="${f.expectedDate}" /></div>
+          <div class="f-field"><label>حالة التحصيل</label><select class="edit-certainty" data-id="${f.id}">${optionsHtml(CERTAINTY_LEVELS, certainty)}</select></div>
           <div class="f-field f-wide"><label>ملاحظات</label><input type="text" class="edit-notes" data-id="${f.id}" value="${escapeAttr(f.notes)}" /></div>
         </div>
         <div class="btn-row">
@@ -1201,22 +1335,43 @@ document.getElementById('toggleAddCommit').addEventListener('click', ()=>{
   document.getElementById('cDate').value = document.getElementById('cDate').value || todayStr();
   document.getElementById('addCommitForm').classList.toggle('hidden');
 });
+document.getElementById('cType').addEventListener('change', e=>{
+  document.getElementById('cNewType').classList.toggle('hidden', e.target.value!=='__new__');
+});
+function addCustomType(name){
+  const clean = name.trim();
+  if (!clean) return null;
+  if (!allCommitTypes().includes(clean)){
+    customTypes.push(clean);
+    save('customTypes', customTypes);
+  }
+  return clean;
+}
 document.getElementById('saveCommit').addEventListener('click', ()=>{
   const name = document.getElementById('cName').value.trim();
   const amount = parseFloat(document.getElementById('cAmount').value);
   const dueDate = document.getElementById('cDate').value || todayStr();
   if (!name || !amount || amount<=0) return;
+  let type = document.getElementById('cType').value;
+  if (type === '__new__'){
+    const newType = addCustomType(document.getElementById('cNewType').value);
+    if (!newType){ alert('اكتب اسم النوع الجديد.'); return; }
+    type = newType;
+  }
   state.commitments.push({
-    id: uid(), name, type: document.getElementById('cType').value, totalAmount: amount,
+    id: uid(), name, type, totalAmount: amount,
     remainingAmount: amount, dueDate, recurrence: document.getElementById('cRecurrence').value,
     notes: document.getElementById('cNotes').value.trim(),
     requestNumber: document.getElementById('cRequestNumber').value.trim(),
     paymentRequestNumber: document.getElementById('cPaymentRequestNumber').value.trim(),
+    paymentRequestDate: document.getElementById('cPaymentRequestDate').value || '',
     requestDate: document.getElementById('cRequestDate').value || '',
     urgency: document.getElementById('cUrgency').value,
     approvals: emptyApprovals(),
   });
-  ['cName','cAmount','cNotes','cRequestNumber','cPaymentRequestNumber','cRequestDate'].forEach(id=>document.getElementById(id).value='');
+  ['cName','cAmount','cNotes','cRequestNumber','cPaymentRequestNumber','cPaymentRequestDate','cRequestDate','cNewType'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('cNewType').classList.add('hidden');
+  renderCTypeSelect();
   document.getElementById('addCommitForm').classList.add('hidden');
   persistAndRenderData();
 });
@@ -1233,6 +1388,7 @@ document.getElementById('saveInflow').addEventListener('click', ()=>{
   state.inflows.push({
     id: uid(), name, source: document.getElementById('fSource').value.trim(), expectedAmount: amount,
     remainingAmount: amount, expectedDate, notes: document.getElementById('fNotes').value.trim(),
+    certainty: document.getElementById('fCertainty').value,
   });
   ['fName','fSource','fAmount','fNotes'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('addInflowForm').classList.add('hidden');
@@ -1317,9 +1473,16 @@ document.getElementById('commitTbody').addEventListener('click', e=>{
   } else if (t.classList.contains('edit-save-commit')){
     const id = t.dataset.id;
     const name = document.querySelector(`.edit-name[data-id="${id}"]`).value.trim();
-    const type = document.querySelector(`.edit-type[data-id="${id}"]`).value;
+    let type = document.querySelector(`.edit-type[data-id="${id}"]`).value;
+    if (type === '__new__'){
+      const newType = addCustomType(document.querySelector(`.edit-new-type[data-id="${id}"]`).value);
+      if (!newType){ alert('اكتب اسم النوع الجديد.'); return; }
+      type = newType;
+      renderCTypeSelect();
+    }
     const requestNumber = document.querySelector(`.edit-request-number[data-id="${id}"]`).value.trim();
     const paymentRequestNumber = document.querySelector(`.edit-payment-request-number[data-id="${id}"]`).value.trim();
+    const paymentRequestDate = document.querySelector(`.edit-payment-request-date[data-id="${id}"]`).value;
     const requestDate = document.querySelector(`.edit-request-date[data-id="${id}"]`).value;
     const urgency = document.querySelector(`.edit-urgency[data-id="${id}"]`).value;
     const total = parseFloat(document.querySelector(`.edit-total[data-id="${id}"]`).value);
@@ -1333,7 +1496,7 @@ document.getElementById('commitTbody').addEventListener('click', e=>{
     }
     const c = state.commitments.find(c=>c.id===id);
     if (!c) return;
-    Object.assign(c, { name, type, totalAmount: total, remainingAmount: remaining, dueDate, recurrence, notes, requestNumber, paymentRequestNumber, requestDate, urgency });
+    Object.assign(c, { name, type, totalAmount: total, remainingAmount: remaining, dueDate, recurrence, notes, requestNumber, paymentRequestNumber, paymentRequestDate, requestDate, urgency });
     persistAndRenderData();
   } else if (t.classList.contains('approval-toggle')){
     document.getElementById('approvalrow-'+t.dataset.id).classList.toggle('hidden');
@@ -1353,13 +1516,12 @@ document.getElementById('commitTbody').addEventListener('change', e=>{
       return;
     }
     if (!c.approvals) c.approvals = emptyApprovals();
-    const idx = APPROVAL_ROLES.findIndex(r=>r.key===role);
     if (t.checked){
-      const prevOk = idx===0 || c.approvals[APPROVAL_ROLES[idx-1].key];
-      if (!prevOk){ alert('لازم الاعتماد اللي قبله يتم الأول.'); persistAndRenderData(); return; }
+      if (!approvalPrereqOk(c.approvals, role)){ alert('لازم الاعتماد اللي قبله يتم الأول.'); persistAndRenderData(); return; }
       c.approvals[role] = true;
     } else {
-      for (let i=idx;i<APPROVAL_ROLES.length;i++) c.approvals[APPROVAL_ROLES[i].key] = false;
+      c.approvals[role] = false;
+      cascadeResetChildren(c.approvals, role);
     }
     persistAndRenderData();
     document.getElementById('approvalrow-'+id).classList.remove('hidden');
@@ -1422,6 +1584,7 @@ document.getElementById('inflowTbody').addEventListener('click', e=>{
     const expected = parseFloat(document.querySelector(`.edit-expected[data-id="${id}"]`).value);
     const remaining = parseFloat(document.querySelector(`.edit-remaining[data-id="${id}"]`).value);
     const expectedDate = document.querySelector(`.edit-date[data-id="${id}"]`).value;
+    const certainty = document.querySelector(`.edit-certainty[data-id="${id}"]`).value;
     const notes = document.querySelector(`.edit-notes[data-id="${id}"]`).value.trim();
     if (!name || isNaN(expected) || expected<=0 || isNaN(remaining) || remaining<0 || !expectedDate){
       alert('تأكد إن الاسم والمبلغ المتوقع والمتبقي والتاريخ كلها مكتوبة صح.');
@@ -1429,7 +1592,7 @@ document.getElementById('inflowTbody').addEventListener('click', e=>{
     }
     const f = state.inflows.find(f=>f.id===id);
     if (!f) return;
-    Object.assign(f, { name, source, expectedAmount: expected, remainingAmount: remaining, expectedDate, notes });
+    Object.assign(f, { name, source, expectedAmount: expected, remainingAmount: remaining, expectedDate, certainty, notes });
     persistAndRenderData();
   }
 });
@@ -1439,6 +1602,11 @@ document.getElementById('inflowTbody').addEventListener('change', e=>{
     if (t.checked) state.selectedInflowIds.add(t.dataset.id); else state.selectedInflowIds.delete(t.dataset.id);
     renderBulkBar('inflow');
     document.getElementById('inflowSelectAll').checked = state.inflows.length>0 && state.inflows.every(f=>state.selectedInflowIds.has(f.id));
+  } else if (t.classList.contains('certainty-select')){
+    const f = state.inflows.find(f=>f.id===t.dataset.id);
+    if (!f) return;
+    f.certainty = t.value;
+    persistAndRenderData();
   }
 });
 document.getElementById('inflowSelectAll').addEventListener('change', e=>{
@@ -1497,6 +1665,25 @@ document.getElementById('inflowSearchInput').addEventListener('input', e=>{
   state.inflowSearch = e.target.value;
   state.inflowPage = 0;
   renderInflowTable();
+});
+
+document.querySelectorAll('.stat-card.clickable').forEach(card=>{
+  card.addEventListener('click', ()=>{
+    state.commitCategoryFilter = card.dataset.filter;
+    state.commitPage = 0;
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelector('.tab-btn[data-tab="commitments"]').classList.add('active');
+    ['overview','commitments','inflows','ledger','users'].forEach(t=>{
+      document.getElementById('panel-'+t).classList.toggle('hidden', t!=='commitments');
+    });
+    state.tab = 'commitments';
+    renderCommitTable();
+  });
+});
+document.getElementById('clearCommitFilter').addEventListener('click', ()=>{
+  state.commitCategoryFilter = null;
+  state.commitPage = 0;
+  renderCommitTable();
 });
 
 // ---- Excel import for inflows ----
@@ -1559,6 +1746,8 @@ function toAmountVal(v){
 
 let pendingImportRows = [];
 
+const CERTAINTY_KEYS = ['حالة', 'تأكيد', 'certainty', 'status'];
+
 function parseWorkbookRows(rows){
   if (!rows.length) return [];
   const headers = rows[0];
@@ -1567,6 +1756,7 @@ function parseWorkbookRows(rows){
   const amountIdx = findCol(headers, AMOUNT_KEYS);
   const dateIdx = findCol(headers, DATE_KEYS);
   const notesIdx = findCol(headers, NOTES_KEYS);
+  const certaintyIdx = findCol(headers, CERTAINTY_KEYS);
 
   const out = [];
   for (let r=1;r<rows.length;r++){
@@ -1577,10 +1767,12 @@ function parseWorkbookRows(rows){
     const amountRaw = amountIdx>=0 ? row[amountIdx] : row[2];
     const dateRaw = dateIdx>=0 ? row[dateIdx] : row[3];
     const notesRaw = notesIdx>=0 ? row[notesIdx] : '';
+    const certaintyRaw = certaintyIdx>=0 ? row[certaintyIdx] : '';
 
     const name = String(nameRaw||'').trim();
     const amount = toAmountVal(amountRaw);
     const date = toISODate(dateRaw);
+    const certainty = matchFromList(certaintyRaw, CERTAINTY_LEVELS, 'مؤكد');
 
     const errors = [];
     if (!name) errors.push('الاسم فارغ');
@@ -1588,7 +1780,7 @@ function parseWorkbookRows(rows){
     if (!date) errors.push('التاريخ غير صحيح');
 
     out.push({
-      name, source: String(sourceRaw||'').trim(), amount, date,
+      name, source: String(sourceRaw||'').trim(), amount, date, certainty,
       notes: String(notesRaw||'').trim(),
       valid: errors.length===0, errors,
     });
@@ -1608,6 +1800,7 @@ function renderImportPreview(rows){
       <td>${escapeHtml(r.source)||'—'}</td>
       <td class="num">${r.amount!=null?fmtMoney(r.amount):'—'}</td>
       <td>${r.date?fmtDateLabel(r.date):'—'}</td>
+      <td>${escapeHtml(r.certainty)||'مؤكد'}</td>
       <td>${r.valid?'<span class="badge st-done">صالح</span>':'<span class="badge st-late">'+escapeHtml(r.errors.join('، '))+'</span>'}</td>
     </tr>`).join('');
   el.innerHTML = `
@@ -1618,8 +1811,8 @@ function renderImportPreview(rows){
     </div>
     <div class="import-table-wrap">
       <table>
-        <thead><tr><th>الاسم</th><th>المصدر</th><th>المبلغ</th><th>التاريخ</th><th>الحالة</th></tr></thead>
-        <tbody>${rowsHtml || '<tr><td colspan="5" class="empty">لا توجد صفوف بيانات في الملف</td></tr>'}</tbody>
+        <thead><tr><th>الاسم</th><th>المصدر</th><th>المبلغ</th><th>التاريخ</th><th>حالة التحصيل</th><th>الحالة</th></tr></thead>
+        <tbody>${rowsHtml || '<tr><td colspan="6" class="empty">لا توجد صفوف بيانات في الملف</td></tr>'}</tbody>
       </table>
     </div>
     <div class="btn-row">
@@ -1633,6 +1826,7 @@ function renderImportPreview(rows){
       state.inflows.push({
         id: uid(), name: r.name, source: r.source, expectedAmount: r.amount,
         remainingAmount: r.amount, expectedDate: r.date, notes: r.notes,
+        certainty: r.certainty || 'مؤكد',
       });
     });
     document.getElementById('excelFileInput').value = '';
@@ -1722,7 +1916,7 @@ function parseCommitRows(rows){
     const name = String(nameRaw||'').trim();
     const amount = toAmountVal(amountRaw);
     const date = toISODate(dateRaw);
-    const type = matchFromList(typeRaw, COMMIT_TYPES, 'أخرى');
+    const type = matchFromList(typeRaw, allCommitTypes(), 'أخرى');
     const recurrence = matchFromList(recurRaw, ['مرة واحدة','شهري','ربع سنوي','سنوي'], 'مرة واحدة');
 
     const errors = [];
@@ -1893,7 +2087,7 @@ function renderUsersTable(){
     return `<tr>
       <td class="num" style="direction:ltr; text-align:right;">${escapeHtml(u.username)}</td>
       <td>${escapeHtml(u.displayName)}</td>
-      <td><span class="badge ${u.role==='admin'?'st-due':'st-done'}">${u.role==='admin'?'أدمن':'مستخدم عادي'}</span></td>
+      <td><span class="badge ${u.role==='admin'?'st-due':u.role==='accountant'?'urg-high':'st-done'}">${u.role==='admin'?'أدمن':u.role==='accountant'?'محاسب':'مستخدم عادي'}</span></td>
       <td>${roleObj ? escapeHtml(roleObj.label) : '—'}</td>
       <td class="actions">
         ${u.id===currentUser.id ? '<span style="font-size:11px;color:var(--muted);">(إنت دلوقتي)</span>' : `<button class="btn-mini btn-danger del-user" data-id="${u.id}">حذف</button>`}
