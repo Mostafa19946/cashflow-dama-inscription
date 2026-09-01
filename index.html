@@ -36,7 +36,7 @@ body { margin:0; background: var(--bg); color: var(--ink); font-family:'IBM Plex
 .stat-card.clickable:hover { border-color:var(--brass); transform:translateY(-1px); }
 .filter-banner { display:flex; align-items:center; justify-content:space-between; gap:10px; background:var(--brass-dim); border:1px solid rgba(201,162,39,0.4); border-radius:8px; padding:10px 14px; margin-bottom:14px; font-size:13px; color:var(--brass); }
 .filter-banner button { background:none; border:1px solid var(--brass); color:var(--brass); border-radius:6px; padding:4px 10px; font-size:11.5px; cursor:pointer; }
-.stat-label { font-size:12px; color:var(--muted); }
+.stat-label { font-size:12px; color:var(--muted); display:flex; align-items:center; gap:6px; }
 .stat-value { font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:600; direction:ltr; }
 .stat-sub { font-size:11px; color:var(--muted-2); }
 .pos { color:var(--surplus); } .neg { color:var(--deficit); }
@@ -254,8 +254,8 @@ body.role-accountant .certainty-select
   <section class="cf-panel hidden" id="accountsPanel" style="margin-bottom:20px;">
     <div class="panel-head row-between">
       <div>
-        <h2>الأرصدة الافتتاحية (بنوك وخزائن)</h2>
-        <p class="panel-sub">أضف كل بنك أو خزينة كبند منفصل، والإجمالي بيتجمع تلقائيًا في الرصيد الافتتاحي المستخدم بكل الحسابات.</p>
+        <h2>🏦 حسابات البنوك والخزائن</h2>
+        <p class="panel-sub">أضف كل بنك أو خزينة كبند منفصل. "الرصيد الافتتاحي" ثابت تقدر تعدّله يدوي، و"الرصيد الحالي" بيتحسب أوتوماتيك من كل عمليات السداد والتحصيل المسجّلة على نفس الحساب.</p>
       </div>
       <button class="btn-primary" id="toggleAddAccount">+ إضافة حساب</button>
     </div>
@@ -269,7 +269,7 @@ body.role-accountant .certainty-select
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>اسم الحساب</th><th>النوع</th><th>الرصيد الافتتاحي</th><th></th></tr></thead>
+        <thead><tr><th>اسم الحساب</th><th>النوع</th><th>الرصيد الافتتاحي</th><th>الرصيد الحالي</th><th></th></tr></thead>
         <tbody id="accountsTbody"></tbody>
       </table>
     </div>
@@ -277,52 +277,57 @@ body.role-accountant .certainty-select
   </section>
   <section class="cf-stats">
     <div class="stat-card clickable" id="cardBalance">
-      <span class="stat-label">الرصيد الحالي الفعلي</span>
+      <span class="stat-label">💰 الرصيد الحالي الفعلي</span>
       <span class="stat-value" id="statBalance">0</span>
       <span class="stat-sub">افتتاحي + تحصيل − سداد — دوس لعرض تفاصيل الحسابات</span>
     </div>
     <div class="stat-card clickable" id="cardUnpaid" data-filter="unpaid">
-      <span class="stat-label">التزامات متبقية</span>
+      <span class="stat-label">📋 التزامات متبقية</span>
       <span class="stat-value neg" id="statCommit">0</span>
       <span class="stat-sub" id="statCommitSub">0 بند غير مسدد</span>
     </div>
-    <div class="stat-card clickable" id="cardInflow" data-inflow-filter="confirmed">
-      <span class="stat-label">تحصيلات متوقعة</span>
+    <div class="stat-card clickable" id="cardInflow" data-inflow-filter="all">
+      <span class="stat-label">📥 تحصيلات متوقعة (الكل)</span>
       <span class="stat-value pos" id="statInflow">0</span>
       <span class="stat-sub" id="statInflowSub">0 بند غير محصّل</span>
     </div>
+    <div class="stat-card clickable" id="cardConfirmedInflow" data-inflow-filter="confirmed">
+      <span class="stat-label">✔️ تحصيلات مؤكدة</span>
+      <span class="stat-value pos" id="statConfirmedInflow">0</span>
+      <span class="stat-sub" id="statConfirmedInflowSub">0 بند مؤكد غير محصّل</span>
+    </div>
     <div class="stat-card clickable" id="statGapCard">
-      <span class="stat-label">أقرب فجوة تمويل</span>
+      <span class="stat-label">⚠️ أقرب فجوة تمويل</span>
       <span class="stat-value" id="statGap">—</span>
       <span class="stat-sub" id="statGapSub"></span>
     </div>
     <div class="stat-card clickable" id="cardAll" data-filter="all">
-      <span class="stat-label">إجمالي الالتزامات</span>
+      <span class="stat-label">🧾 إجمالي الالتزامات</span>
       <span class="stat-value" id="statTotalCommitCount">0</span>
       <span class="stat-sub" id="statTotalCommitSub">0 طلب مسجّل</span>
     </div>
     <div class="stat-card clickable" id="statUrgentCard" data-filter="urgent">
-      <span class="stat-label">طلبات عاجلة</span>
+      <span class="stat-label">🔴 طلبات عاجلة</span>
       <span class="stat-value neg" id="statUrgentCount">0</span>
       <span class="stat-sub" id="statUrgentSub">مبلغها 0</span>
     </div>
     <div class="stat-card clickable" id="cardDeferred" data-filter="deferred">
-      <span class="stat-label">مؤجلة</span>
+      <span class="stat-label">⏸️ مؤجلة</span>
       <span class="stat-value" id="statDeferredCount">0</span>
       <span class="stat-sub" id="statDeferredSub">مبلغها 0</span>
     </div>
     <div class="stat-card clickable" id="statLateCommitCard" data-filter="late">
-      <span class="stat-label">طلبات متأخرة</span>
+      <span class="stat-label">⏰ طلبات متأخرة</span>
       <span class="stat-value neg" id="statLateCommitCount">0</span>
       <span class="stat-sub" id="statLateCommitSub">مبلغها 0</span>
     </div>
     <div class="stat-card clickable" id="cardDailyApproved" data-filter="dailyApproved">
-      <span class="stat-label">معتمد للصرف اليوم</span>
+      <span class="stat-label">✅ معتمد للصرف اليوم</span>
       <span class="stat-value pos" id="statDailyApproved">0</span>
       <span class="stat-sub" id="statDailyApprovedSub">اعتماد كامل (3 تواقيع) ومستحق النهاردة</span>
     </div>
     <div class="stat-card clickable" id="cardTotalPaid" data-filter="paid">
-      <span class="stat-label">إجمالي المسدد من الالتزامات</span>
+      <span class="stat-label">💸 إجمالي المسدد من الالتزامات</span>
       <span class="stat-value pos" id="statTotalPaid">0</span>
       <span class="stat-sub" id="statTotalPaidSub">من إجمالي القيمة الأصلية</span>
     </div>
@@ -808,8 +813,13 @@ function renderStats(){
   document.getElementById('statCommit').textContent = fmtMoney(totalRemainingCommit);
   document.getElementById('statCommitSub').textContent = state.commitments.filter(c=>c.remainingAmount>0).length + ' بند غير مسدد';
 
-  document.getElementById('statInflow').textContent = fmtMoney(totalRemainingInflow);
-  document.getElementById('statInflowSub').textContent = state.inflows.filter(f=>f.remainingAmount>0 && isConfirmedInflow(f)).length + ' بند مؤكد غير محصّل';
+  const allRemainingInflows = state.inflows.filter(f=>f.remainingAmount>0 && isSaneDate(f.expectedDate));
+  const totalAllInflow = allRemainingInflows.reduce((s,f)=>s+f.remainingAmount,0);
+  document.getElementById('statInflow').textContent = fmtMoney(totalAllInflow);
+  document.getElementById('statInflowSub').textContent = allRemainingInflows.length + ' بند غير محصّل (كل الحالات)';
+
+  document.getElementById('statConfirmedInflow').textContent = fmtMoney(totalRemainingInflow);
+  document.getElementById('statConfirmedInflowSub').textContent = state.inflows.filter(f=>f.remainingAmount>0 && isConfirmedInflow(f)).length + ' بند مؤكد غير محصّل';
 
   const gapCard = document.getElementById('statGapCard');
   const gapVal = document.getElementById('statGap');
@@ -1087,6 +1097,8 @@ function renderCommitTable(){
           <input type="number" class="pay-amount" data-id="${c.id}" value="${c.remainingAmount}" max="${c.remainingAmount}" min="0.01" step="0.01" />
           <label>تاريخ السداد</label>
           <input type="date" class="pay-date" data-id="${c.id}" value="${todayStr()}" />
+          <label>سدّد من حساب</label>
+          <select class="pay-account account-select" data-id="${c.id}"></select>
           <button class="btn-primary btn-sm pay-confirm" data-id="${c.id}">تأكيد السداد</button>
         </div>
         <p class="panel-sub" style="margin-top:6px;">مسدد حتى الآن: ${fmtMoney(c.totalAmount - c.remainingAmount)} من ${fmtMoney(c.totalAmount)} — سيب الرقم زي ما هو لسداد كامل، أو قلّله لتسجيل دفعة جزئية والباقي هيفضل مستحق.</p>
@@ -1194,6 +1206,8 @@ function renderInflowTable(){
           <input type="number" class="collect-amount" data-id="${f.id}" value="${f.remainingAmount}" max="${f.remainingAmount}" min="0.01" step="0.01" />
           <label>تاريخ التحصيل</label>
           <input type="date" class="collect-date" data-id="${f.id}" value="${todayStr()}" />
+          <label>تم التحصيل في حساب</label>
+          <select class="collect-account account-select" data-id="${f.id}"></select>
           <button class="btn-primary btn-sm collect-confirm" data-id="${f.id}">تأكيد التحصيل</button>
         </div>
         <p class="panel-sub" style="margin-top:6px;">محصّل حتى الآن: ${fmtMoney(f.expectedAmount - f.remainingAmount)} من ${fmtMoney(f.expectedAmount)} — سيب الرقم زي ما هو لتحصيل كامل، أو قلّله لتسجيل دفعة جزئية.</p>
@@ -1263,7 +1277,7 @@ function renderLedger(){
           <tr>
             <td class="ledger-date">${fmtDateLabel(t.date)}</td>
             <td><span class="badge ${t.kind==='تحصيل'?'st-done':'st-late'}">${t.kind}</span></td>
-            <td>${escapeHtml(t.refName)}</td>
+            <td>${escapeHtml(t.refName)}${t.accountId ? `<div class="td-note">${accountIcon((accounts.find(a=>a.id===t.accountId)||{}).type)} ${escapeHtml((accounts.find(a=>a.id===t.accountId)||{}).name||'حساب محذوف')}</div>` : ''}</td>
             <td class="num ${t.kind==='تحصيل'?'pos':'neg'}">${t.kind==='تحصيل'?'+':'−'}${fmtMoney(t.amount)}</td>
             <td class="actions">
               <button class="btn-mini txn-edit-toggle" data-id="${t.id}">تعديل</button>
@@ -1355,6 +1369,11 @@ function renderBulkBar(kind){
   }
 }
 
+function populateAccountSelects(){
+  const optsHtml = '<option value="">— بدون تحديد —</option>' + accounts.map(a=>`<option value="${escapeAttr(a.id)}">${accountIcon(a.type)} ${escapeHtml(a.name)}</option>`).join('');
+  document.querySelectorAll('.account-select').forEach(sel=>{ sel.innerHTML = optsHtml; });
+}
+
 function renderAll(){
   const { cashBalance, timeline } = renderStats();
   renderChart(timeline);
@@ -1362,6 +1381,7 @@ function renderAll(){
   renderCommitTable();
   renderInflowTable();
   renderLedger();
+  populateAccountSelects();
   if (currentUser && currentUser.role==='admin') renderUsersTable();
 }
 
@@ -1389,28 +1409,79 @@ document.getElementById('saveAccount').addEventListener('click', ()=>{
   renderAccountsTable();
   renderAll();
 });
+function accountIcon(type){ return type==='بنك' ? '🏦' : '💵'; }
+
+function accountCurrentBalance(accountId){
+  const acc = accounts.find(a=>a.id===accountId);
+  if (!acc) return 0;
+  let bal = Number(acc.balance)||0;
+  state.transactions.forEach(t=>{
+    if (t.accountId === accountId){
+      bal += (t.kind==='تحصيل') ? t.amount : -t.amount;
+    }
+  });
+  return bal;
+}
+
 function renderAccountsTable(){
   const tbody = document.getElementById('accountsTbody');
   if (!accounts.length){
-    tbody.innerHTML = '<tr><td colspan="4" class="empty">لسه معملتش أي حساب بنكي أو خزينة. اضغط "+ إضافة حساب".</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">لسه معملتش أي حساب بنكي أو خزينة. اضغط "+ إضافة حساب".</td></tr>';
   } else {
-    tbody.innerHTML = accounts.map(a=>`
-      <tr>
-        <td>${escapeHtml(a.name)}</td>
+    tbody.innerHTML = accounts.map(a=>{
+      const current = accountCurrentBalance(a.id);
+      return `<tr>
+        <td>${accountIcon(a.type)} ${escapeHtml(a.name)}</td>
         <td>${escapeHtml(a.type)}</td>
         <td class="num">${fmtMoney(a.balance)}</td>
-        <td class="actions"><button class="btn-mini btn-danger del-account" data-id="${a.id}">حذف</button></td>
-      </tr>`).join('');
+        <td class="num ${current<0?'neg':'pos'}">${fmtMoney(current)}</td>
+        <td class="actions">
+          <button class="btn-mini edit-toggle-account" data-id="${a.id}">تعديل</button>
+          <button class="btn-mini btn-danger del-account" data-id="${a.id}">حذف</button>
+        </td>
+      </tr>
+      <tr class="edit-row hidden" id="editrow-account-${a.id}">
+        <td colspan="5">
+          <div class="pay-inline">
+            <label>اسم الحساب</label>
+            <input type="text" class="edit-acc-name" data-id="${a.id}" value="${escapeAttr(a.name)}" />
+            <label>النوع</label>
+            <select class="edit-acc-type" data-id="${a.id}">${optionsHtml(['بنك','خزينة'], a.type)}</select>
+            <label>الرصيد الافتتاحي</label>
+            <input type="number" class="edit-acc-balance" data-id="${a.id}" value="${a.balance}" />
+            <button class="btn-primary btn-sm edit-save-account" data-id="${a.id}">حفظ</button>
+            <button class="btn-mini edit-cancel-account" data-id="${a.id}">إلغاء</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
   }
   const total = totalOpeningBalance();
   document.getElementById('accountsTotal').textContent = fmtMoney(total);
   document.getElementById('accountsTotalHeader').textContent = fmtMoney(total);
+  populateAccountSelects();
 }
 document.getElementById('accountsTbody').addEventListener('click', e=>{
   const t = e.target;
   if (t.classList.contains('del-account')){
-    if (!confirm('متأكد إنك عايز تحذف الحساب ده؟')) return;
+    if (!confirm('متأكد إنك عايز تحذف الحساب ده؟ العمليات المرتبطة بيه هتفضل مسجلة بس مش هتتحسب في رصيده.')) return;
     accounts = accounts.filter(a=>a.id!==t.dataset.id);
+    saveAccounts();
+    renderAccountsTable();
+    renderAll();
+  } else if (t.classList.contains('edit-toggle-account')){
+    document.getElementById('editrow-account-'+t.dataset.id).classList.toggle('hidden');
+  } else if (t.classList.contains('edit-cancel-account')){
+    document.getElementById('editrow-account-'+t.dataset.id).classList.add('hidden');
+  } else if (t.classList.contains('edit-save-account')){
+    const id = t.dataset.id;
+    const name = document.querySelector(`.edit-acc-name[data-id="${id}"]`).value.trim();
+    const type = document.querySelector(`.edit-acc-type[data-id="${id}"]`).value;
+    const balance = parseFloat(document.querySelector(`.edit-acc-balance[data-id="${id}"]`).value);
+    if (!name || isNaN(balance)){ alert('اكتب اسم الحساب والرصيد صح.'); return; }
+    const acc = accounts.find(a=>a.id===id);
+    if (!acc) return;
+    Object.assign(acc, { name, type, balance });
     saveAccounts();
     renderAccountsTable();
     renderAll();
@@ -1557,11 +1628,12 @@ document.getElementById('commitTbody').addEventListener('click', e=>{
     const id = t.dataset.id;
     const amount = parseFloat(document.querySelector(`.pay-amount[data-id="${id}"]`).value);
     const date = document.querySelector(`.pay-date[data-id="${id}"]`).value || todayStr();
+    const accountId = document.querySelector(`.pay-account[data-id="${id}"]`).value || null;
     if (!amount || amount<=0) return;
     const c = state.commitments.find(c=>c.id===id);
     if (!c) return;
     c.remainingAmount = Math.max(0, +(c.remainingAmount-amount).toFixed(2));
-    state.transactions.push({ id: uid(), kind:'سداد', refId:id, refName:c.name, amount, date });
+    state.transactions.push({ id: uid(), kind:'سداد', refId:id, refName:c.name, amount, date, accountId });
     persistAndRenderData();
   } else if (t.classList.contains('edit-toggle-commit')){
     document.getElementById('editrow-commit-'+t.dataset.id).classList.toggle('hidden');
@@ -1664,11 +1736,12 @@ document.getElementById('inflowTbody').addEventListener('click', e=>{
     const id = t.dataset.id;
     const amount = parseFloat(document.querySelector(`.collect-amount[data-id="${id}"]`).value);
     const date = document.querySelector(`.collect-date[data-id="${id}"]`).value || todayStr();
+    const accountId = document.querySelector(`.collect-account[data-id="${id}"]`).value || null;
     if (!amount || amount<=0) return;
     const f = state.inflows.find(f=>f.id===id);
     if (!f) return;
     f.remainingAmount = Math.max(0, +(f.remainingAmount-amount).toFixed(2));
-    state.transactions.push({ id: uid(), kind:'تحصيل', refId:id, refName:f.name, amount, date });
+    state.transactions.push({ id: uid(), kind:'تحصيل', refId:id, refName:f.name, amount, date, accountId });
     persistAndRenderData();
   } else if (t.classList.contains('edit-toggle-inflow')){
     document.getElementById('editrow-inflow-'+t.dataset.id).classList.toggle('hidden');
@@ -1785,7 +1858,7 @@ document.getElementById('clearCommitFilter').addEventListener('click', ()=>{
 
 document.querySelectorAll('.stat-card.clickable[data-inflow-filter]').forEach(card=>{
   card.addEventListener('click', ()=>{
-    state.inflowCategoryFilter = card.dataset.inflowFilter;
+    state.inflowCategoryFilter = card.dataset.inflowFilter === 'all' ? null : card.dataset.inflowFilter;
     state.inflowPage = 0;
     document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
     document.querySelector('.tab-btn[data-tab="inflows"]').classList.add('active');
