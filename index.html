@@ -2129,7 +2129,10 @@ function excelSerialToDate(v){
 
 function toISODate(v){
   let iso = null;
-  if (v instanceof Date && !isNaN(v)) iso = v.toISOString().slice(0,10);
+  if (v instanceof Date && !isNaN(v)){
+    // استخدام التوقيت المحلي بدل UTC عشان مايترجعش التاريخ يوم لورا
+    iso = `${v.getFullYear()}-${pad2(v.getMonth()+1)}-${pad2(v.getDate())}`;
+  }
   else if (typeof v === 'number'){
     const d = excelSerialToDate(v);
     iso = d ? d.toISOString().slice(0,10) : null;
@@ -2142,7 +2145,7 @@ function toISODate(v){
       if (m) iso = `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
       else {
         const d = new Date(s);
-        if (!isNaN(d)) iso = d.toISOString().slice(0,10);
+        if (!isNaN(d)) iso = `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
       }
     }
   }
@@ -2287,7 +2290,7 @@ document.getElementById('excelFileInput').addEventListener('change', e=>{
   reader.onload = evt => {
     try {
       const data = new Uint8Array(evt.target.result);
-      const wb = XLSX.read(data, { type:'array', cellDates:true });
+      const wb = XLSX.read(data, { type:'array' });
       const sheet = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(sheet, { header:1, defval:'', raw:true });
       const parsed = parseWorkbookRows(rows);
@@ -2437,7 +2440,7 @@ document.getElementById('excelFileInputCommit').addEventListener('change', e=>{
   reader.onload = evt => {
     try {
       const data = new Uint8Array(evt.target.result);
-      const wb = XLSX.read(data, { type:'array', cellDates:true });
+      const wb = XLSX.read(data, { type:'array' });
       const sheet = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(sheet, { header:1, defval:'', raw:true });
       const parsed = parseCommitRows(rows);
