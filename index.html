@@ -113,6 +113,10 @@ tbody tr:hover td { background:var(--surface-2); }
 .approval-step.done { border-color:var(--surplus); background:var(--surplus-dim); color:var(--surplus); }
 .approval-step.locked { opacity:0.45; cursor:not-allowed; }
 .approval-step input { cursor:pointer; }
+.order-box { margin-top:12px; background:var(--surplus-dim); border:1px solid rgba(79,165,121,0.4); border-radius:8px; padding:12px 14px; }
+.order-box-title { font-size:13px; color:var(--surplus); font-weight:600; margin-bottom:8px; }
+.order-box-periods { display:flex; gap:20px; flex-wrap:wrap; font-size:12.5px; color:var(--ink); }
+.order-box-periods b { font-family:'IBM Plex Mono',monospace; color:var(--surplus); }
 
 .pay-row td { background:var(--surface-2); padding:12px 10px; }
 .edit-row td { background:var(--surface-2); padding:14px 10px; border-top:2px solid var(--brass-dim); }
@@ -415,8 +419,8 @@ body.role-accountant .certainty-select
           <select id="cType"></select>
           <input type="text" id="cNewType" class="hidden" placeholder="اكتب اسم النوع الجديد" style="margin-top:6px;" />
         </div>
-        <div class="f-field"><label>رقم طلب الالتزام</label><input id="cRequestNumber" placeholder="مثال: REQ-1024" /></div>
-        <div class="f-field"><label>رقم طلب الدفع</label><input id="cPaymentRequestNumber" placeholder="مثال: PAY-2045" /></div>
+        <div class="f-field"><label>رقم طلب الالتزام (تلقائي)</label><input id="cRequestNumber" readonly style="opacity:0.8; cursor:not-allowed;" /></div>
+        <div class="f-field"><label>رقم طلب الدفع (تلقائي)</label><input id="cPaymentRequestNumber" readonly style="opacity:0.8; cursor:not-allowed;" /></div>
         <div class="f-field"><label>تاريخ تقديم طلب الدفع</label><input type="date" id="cPaymentRequestDate" /></div>
         <div class="f-field"><label>تاريخ تقديم الطلب</label><input type="date" id="cRequestDate" /></div>
         <div class="f-field"><label>مدى الأهمية</label>
@@ -606,6 +610,37 @@ const APPROVAL_ROLES = [
   { key: 'viceChairman', label: 'نائب رئيس مجلس الإدارة' },
   { key: 'chairman', label: 'رئيس مجلس الإدارة' },
 ];
+function nextSeqNumber(prefix, fieldName){
+  let max = 0;
+  state.commitments.forEach(c=>{
+    const val = String(c[fieldName]||'');
+    if (val.startsWith(prefix+'-')){
+      const n = parseInt(val.slice(prefix.length+1), 10);
+      if (!isNaN(n) && n>max) max = n;
+    }
+  });
+  return prefix + '-' + String(max+1).padStart(4,'0');
+}
+function nextRequestNumber(){ return nextSeqNumber('REQ', 'requestNumber'); }
+function nextPaymentRequestNumber(){ return nextSeqNumber('PAY', 'paymentRequestNumber'); }
+function nextPaymentOrderNumber(){ return nextSeqNumber('ORD', 'paymentOrderNumber'); }
+
+function issuePaymentOrderIfReady(c){
+  if (isFullyApproved(c.approvals) && !c.paymentOrderNumber){
+    c.paymentOrderNumber = nextPaymentOrderNumber();
+    c.paymentOrderDate = todayStr();
+    return true;
+  }
+  return false;
+}
+function paymentOrderPeriods(c){
+  if (!c.paymentOrderDate) return null;
+  const fromDate = c.paymentRequestDate || c.requestDate || null;
+  const daysRequestToOrder = fromDate ? daysBetween(fromDate, c.paymentOrderDate) : null;
+  const daysSinceOrder = daysBetween(c.paymentOrderDate, todayStr());
+  return { daysRequestToOrder, daysSinceOrder };
+}
+
 function emptyApprovals(){
   const o = {};
   APPROVAL_ROLES.forEach(r => o[r.key] = false);
@@ -687,7 +722,7 @@ let airtableRecordIndex = {};
 Object.keys(AIRTABLE_TABLE_IDS).forEach(k=>{ airtableRecordIndex[k] = new Map(); });
 
 function toAirtableRecord(tableKey, obj){
-  if (tableKey === 'commitments') return { LocalId: obj.id, Name: obj.name||'', Type: obj.type||'', Company: obj.company||'', TotalAmount: Number(obj.totalAmount)||0, RemainingAmount: Number(obj.remainingAmount)||0, DueDate: obj.dueDate||'', Recurrence: obj.recurrence||'', Notes: obj.notes||'', RequestNumber: obj.requestNumber||'', PaymentRequestNumber: obj.paymentRequestNumber||'', PaymentRequestDate: obj.paymentRequestDate||'', RequestDate: obj.requestDate||'', Urgency: obj.urgency||'', ApprovalsJSON: JSON.stringify(obj.approvals||{}) };
+  if (tableKey === 'commitments') return { LocalId: obj.id, Name: obj.name||'', Type: obj.type||'', Company: obj.company||'', TotalAmount: Number(obj.totalAmount)||0, RemainingAmount: Number(obj.remainingAmount)||0, DueDate: obj.dueDate||'', Recurrence: obj.recurrence||'', Notes: obj.notes||'', RequestNumber: obj.requestNumber||'', PaymentRequestNumber: obj.paymentRequestNumber||'', PaymentRequestDate: obj.paymentRequestDate||'', RequestDate: obj.requestDate||'', Urgency: obj.urgency||'', ApprovalsJSON: JSON.stringify(obj.approvals||{}), PaymentOrderNumber: obj.paymentOrderNumber||'', PaymentOrderDate: obj.paymentOrderDate||'' };
   if (tableKey === 'inflows') return { LocalId: obj.id, Name: obj.name||'', Source: obj.source||'', ExpectedAmount: Number(obj.expectedAmount)||0, RemainingAmount: Number(obj.remainingAmount)||0, ExpectedDate: obj.expectedDate||'', Notes: obj.notes||'', Certainty: obj.certainty||'' };
   if (tableKey === 'transactions') return { LocalId: obj.id, Kind: obj.kind||'', RefId: obj.refId||'', RefName: obj.refName||'', Amount: Number(obj.amount)||0, Date: obj.date||'', AccountId: obj.accountId||'' };
   if (tableKey === 'accounts') return { LocalId: obj.id, Name: obj.name||'', Type: obj.type||'', Balance: Number(obj.balance)||0 };
@@ -699,7 +734,7 @@ function fromAirtableRecord(tableKey, rec){
   const f = rec.fields || {};
   if (tableKey === 'commitments'){
     let approvals; try{ approvals = JSON.parse(f.ApprovalsJSON||'{}'); }catch(e){ approvals = emptyApprovals(); }
-    return { id: f.LocalId, name: f.Name||'', type: f.Type||'', company: f.Company||'', totalAmount: Number(f.TotalAmount)||0, remainingAmount: Number(f.RemainingAmount)||0, dueDate: f.DueDate||'', recurrence: f.Recurrence||'', notes: f.Notes||'', requestNumber: f.RequestNumber||'', paymentRequestNumber: f.PaymentRequestNumber||'', paymentRequestDate: f.PaymentRequestDate||'', requestDate: f.RequestDate||'', urgency: f.Urgency||'عادي', approvals };
+    return { id: f.LocalId, name: f.Name||'', type: f.Type||'', company: f.Company||'', totalAmount: Number(f.TotalAmount)||0, remainingAmount: Number(f.RemainingAmount)||0, dueDate: f.DueDate||'', recurrence: f.Recurrence||'', notes: f.Notes||'', requestNumber: f.RequestNumber||'', paymentRequestNumber: f.PaymentRequestNumber||'', paymentRequestDate: f.PaymentRequestDate||'', requestDate: f.RequestDate||'', urgency: f.Urgency||'عادي', approvals, paymentOrderNumber: f.PaymentOrderNumber||'', paymentOrderDate: f.PaymentOrderDate||'' };
   }
   if (tableKey === 'inflows') return { id: f.LocalId, name: f.Name||'', source: f.Source||'', expectedAmount: Number(f.ExpectedAmount)||0, remainingAmount: Number(f.RemainingAmount)||0, expectedDate: f.ExpectedDate||'', notes: f.Notes||'', certainty: f.Certainty||'مؤكد' };
   if (tableKey === 'transactions') return { id: f.LocalId, kind: f.Kind||'', refId: f.RefId||'', refName: f.RefName||'', amount: Number(f.Amount)||0, date: f.Date||'', accountId: f.AccountId||null };
@@ -1295,7 +1330,7 @@ function renderCommitTable(){
       <td class="num">${days!=null ? days+' يوم' : '—'}</td>
       <td class="num">${fmtMoney(c.totalAmount)}</td>
       <td class="num neg">${fmtMoney(c.remainingAmount)}</td>
-      <td><button class="btn-mini approval-toggle" data-id="${c.id}">${approvedCount}/3 ${fullyApproved?'✅':''}</button></td>
+      <td><button class="btn-mini approval-toggle" data-id="${c.id}">${approvedCount}/3 ${fullyApproved?'✅':''}${c.paymentOrderNumber?` 📄${c.paymentOrderNumber}`:''}</button></td>
       <td><span class="badge ${st.cls}">${st.label}</span></td>
       <td class="actions">
         ${c.remainingAmount>0 ? `<button class="btn-mini pay-toggle" data-id="${c.id}">تسجيل سداد</button>` : ''}
@@ -1331,6 +1366,17 @@ function renderCommitTable(){
           }).join('')}
         </div>
         <p class="panel-sub" style="margin-top:8px;">يكفي 3 توقيعات: مدير الحسابات + مدير القطاع المالي + واحد بس من (نائب رئيس مجلس الإدارة أو رئيس مجلس الإدارة). إلغاء اعتماد مدير الحسابات أو المالي بيلغي اللي بعده تلقائيًا.</p>
+        ${(()=>{
+          if (!c.paymentOrderNumber) return '';
+          const per = paymentOrderPeriods(c);
+          return `<div class="order-box">
+            <div class="order-box-title">📄 أمر الدفع رقم: <b>${escapeHtml(c.paymentOrderNumber)}</b> — صادر بتاريخ ${fmtDateLabel(c.paymentOrderDate)}</div>
+            <div class="order-box-periods">
+              <span>المدة من تقديم الطلب للاعتماد: <b>${per.daysRequestToOrder!=null ? per.daysRequestToOrder+' يوم' : '—'}</b></span>
+              <span>المدة من الاعتماد لحد النهاردة: <b>${per.daysSinceOrder!=null ? per.daysSinceOrder+' يوم' : '—'}</b></span>
+            </div>
+          </div>`;
+        })()}
       </td>
     </tr>
     <tr class="edit-row hidden" id="editrow-commit-${c.id}">
@@ -1715,7 +1761,12 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
 
 document.getElementById('toggleAddCommit').addEventListener('click', ()=>{
   document.getElementById('cDate').value = document.getElementById('cDate').value || todayStr();
+  const isOpening = document.getElementById('addCommitForm').classList.contains('hidden');
   document.getElementById('addCommitForm').classList.toggle('hidden');
+  if (isOpening){
+    document.getElementById('cRequestNumber').value = nextRequestNumber();
+    document.getElementById('cPaymentRequestNumber').value = nextPaymentRequestNumber();
+  }
 });
 document.getElementById('cType').addEventListener('change', e=>{
   document.getElementById('cNewType').classList.toggle('hidden', e.target.value!=='__new__');
@@ -1907,8 +1958,10 @@ document.getElementById('commitTbody').addEventListener('change', e=>{
       c.approvals[role] = false;
       cascadeResetChildren(c.approvals, role);
     }
+    const justIssued = issuePaymentOrderIfReady(c);
     persistAndRenderData();
     document.getElementById('approvalrow-'+id).classList.remove('hidden');
+    if (justIssued) alert(`تم اعتماد الالتزام بالكامل ✅\nاتصدر أمر دفع رقم: ${c.paymentOrderNumber}`);
   } else if (t.classList.contains('commit-checkbox')){
     if (t.checked) state.selectedCommitIds.add(t.dataset.id); else state.selectedCommitIds.delete(t.dataset.id);
     renderBulkBar('commit');
@@ -2399,6 +2452,7 @@ function renderImportPreviewCommit(rows){
         remainingAmount: r.amount, dueDate: r.date, recurrence: r.recurrence,
         notes: r.notes,
         requestNumber: '', paymentRequestNumber: '', requestDate: '', urgency: 'عادي', approvals: emptyApprovals(),
+        paymentOrderNumber: '', paymentOrderDate: '',
       });
     });
     document.getElementById('excelFileInputCommit').value = '';
