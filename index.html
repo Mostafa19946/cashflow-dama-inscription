@@ -237,6 +237,7 @@ body.role-accountant .certainty-select
     </div>
     <div style="display:flex; align-items:center; gap:18px; flex-wrap:wrap;">
       <div class="user-badge">
+        <span id="syncStatus" style="font-size:11px;">🔄 بيتزامن...</span>
         <span>مسجل دخول: <b id="currentUserName">—</b></span>
         <span class="role-tag" id="currentUserRoleTag">—</span>
         <button class="logout-btn" id="logoutBtn">تسجيل خروج</button>
@@ -651,7 +652,163 @@ function periodLabel(key, period){
   return `سنة ${key}`;
 }
 function load(key, fallback){ try{ const v=localStorage.getItem('cf_'+key); return v!=null?JSON.parse(v):fallback; }catch(e){ return fallback; } }
-function save(key, val){ try{ localStorage.setItem('cf_'+key, JSON.stringify(val)); }catch(e){ console.error(e); } }
+function cacheLocal(key, val){ try{ localStorage.setItem('cf_'+key, JSON.stringify(val)); }catch(e){ console.error(e); } }
+
+// ---- Airtable shared-database layer ----
+const AIRTABLE_BASE_ID = 'appOu5N99IuXbI1kI';
+const AIRTABLE_TOKEN = 'pat9IfTFtiwuXYcQu.da030bfe9963eb7212e58f1d75bfc8af009660ca0a3a7cc9f4b057248b65624b';
+const AIRTABLE_TABLE_IDS = {
+  commitments: 'tblrOubMnWkcLSGZC',
+  inflows: 'tblRRYetQXVrIxuKh',
+  transactions: 'tblLxvceIcKo4Oo6T',
+  accounts: 'tblxoZX6Eby7fUKiO',
+  users: 'tbl0RnQaSvUGkeack',
+  customTypes: 'tblObxPorOMzvcjDb',
+};
+let airtableRecordIndex = {};
+Object.keys(AIRTABLE_TABLE_IDS).forEach(k=>{ airtableRecordIndex[k] = new Map(); });
+
+function toAirtableRecord(tableKey, obj){
+  if (tableKey === 'commitments') return { LocalId: obj.id, Name: obj.name||'', Type: obj.type||'', TotalAmount: Number(obj.totalAmount)||0, RemainingAmount: Number(obj.remainingAmount)||0, DueDate: obj.dueDate||'', Recurrence: obj.recurrence||'', Notes: obj.notes||'', RequestNumber: obj.requestNumber||'', PaymentRequestNumber: obj.paymentRequestNumber||'', PaymentRequestDate: obj.paymentRequestDate||'', RequestDate: obj.requestDate||'', Urgency: obj.urgency||'', ApprovalsJSON: JSON.stringify(obj.approvals||{}) };
+  if (tableKey === 'inflows') return { LocalId: obj.id, Name: obj.name||'', Source: obj.source||'', ExpectedAmount: Number(obj.expectedAmount)||0, RemainingAmount: Number(obj.remainingAmount)||0, ExpectedDate: obj.expectedDate||'', Notes: obj.notes||'', Certainty: obj.certainty||'' };
+  if (tableKey === 'transactions') return { LocalId: obj.id, Kind: obj.kind||'', RefId: obj.refId||'', RefName: obj.refName||'', Amount: Number(obj.amount)||0, Date: obj.date||'', AccountId: obj.accountId||'' };
+  if (tableKey === 'accounts') return { LocalId: obj.id, Name: obj.name||'', Type: obj.type||'', Balance: Number(obj.balance)||0 };
+  if (tableKey === 'users') return { LocalId: obj.id, Username: obj.username||'', Password: obj.password||'', DisplayName: obj.displayName||'', Role: obj.role||'', ApprovalRole: obj.approvalRole||'' };
+  if (tableKey === 'customTypes') return { LocalId: obj, Name: obj };
+  return {};
+}
+function fromAirtableRecord(tableKey, rec){
+  const f = rec.fields || {};
+  if (tableKey === 'commitments'){
+    let approvals; try{ approvals = JSON.parse(f.ApprovalsJSON||'{}'); }catch(e){ approvals = emptyApprovals(); }
+    return { id: f.LocalId, name: f.Name||'', type: f.Type||'', totalAmount: Number(f.TotalAmount)||0, remainingAmount: Number(f.RemainingAmount)||0, dueDate: f.DueDate||'', recurrence: f.Recurrence||'', notes: f.Notes||'', requestNumber: f.RequestNumber||'', paymentRequestNumber: f.PaymentRequestNumber||'', paymentRequestDate: f.PaymentRequestDate||'', requestDate: f.RequestDate||'', urgency: f.Urgency||'عادي', approvals };
+  }
+  if (tableKey === 'inflows') return { id: f.LocalId, name: f.Name||'', source: f.Source||'', expectedAmount: Number(f.ExpectedAmount)||0, remainingAmount: Number(f.RemainingAmount)||0, expectedDate: f.ExpectedDate||'', notes: f.Notes||'', certainty: f.Certainty||'مؤكد' };
+  if (tableKey === 'transactions') return { id: f.LocalId, kind: f.Kind||'', refId: f.RefId||'', refName: f.RefName||'', amount: Number(f.Amount)||0, date: f.Date||'', accountId: f.AccountId||null };
+  if (tableKey === 'accounts') return { id: f.LocalId, name: f.Name||'', type: f.Type||'', balance: Number(f.Balance)||0 };
+  if (tableKey === 'users') return { id: f.LocalId, username: f.Username||'', password: f.Password||'', displayName: f.DisplayName||'', role: f.Role||'user', approvalRole: f.ApprovalRole||'' };
+  if (tableKey === 'customTypes') return f.Name || f.LocalId || '';
+  return null;
+}
+
+async function airtableApi(method, tableKey, qs, body){
+  const tblId = AIRTABLE_TABLE_IDS[tableKey];
+  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${tblId}${qs||''}`;
+  const res = await fetch(url, {
+    method,
+    headers: { 'Authorization': 'Bearer ' + AIRTABLE_TOKEN, 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok){ const t = await res.text(); throw new Error('Airtable '+method+' '+tableKey+' failed: '+res.status+' '+t); }
+  return res.json();
+}
+async function airtableListAll(tableKey){
+  let all = [], offset = null;
+  do {
+    const qs = '?pageSize=100' + (offset ? '&offset='+offset : '');
+    const data = await airtableApi('GET', tableKey, qs);
+    all = all.concat(data.records||[]);
+    offset = data.offset || null;
+  } while (offset);
+  return all;
+}
+function chunkArr(arr, size){ const out=[]; for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size)); return out; }
+async function airtableBatchCreate(tableKey, fieldsArray){
+  const results = [];
+  for (const group of chunkArr(fieldsArray, 10)){
+    const data = await airtableApi('POST', tableKey, '', { records: group.map(f=>({fields:f})) });
+    results.push(...data.records);
+  }
+  return results;
+}
+async function airtableBatchUpdate(tableKey, recordsWithId){
+  const results = [];
+  for (const group of chunkArr(recordsWithId, 10)){
+    const data = await airtableApi('PATCH', tableKey, '', { records: group });
+    results.push(...data.records);
+  }
+  return results;
+}
+async function airtableBatchDelete(tableKey, recordIds){
+  for (const group of chunkArr(recordIds, 10)){
+    const qs = '?' + group.map(id=>'records[]='+encodeURIComponent(id)).join('&');
+    await airtableApi('DELETE', tableKey, qs);
+  }
+}
+
+async function loadFromAirtable(tableKey){
+  try {
+    const records = await airtableListAll(tableKey);
+    const idx = new Map();
+    const items = records.map(rec=>{
+      idx.set(rec.fields.LocalId, rec.id);
+      return fromAirtableRecord(tableKey, rec);
+    }).filter(it=>it!=null && (typeof it!=='object' || it.id));
+    airtableRecordIndex[tableKey] = idx;
+    return items;
+  } catch(e){
+    console.error('Airtable load failed:', tableKey, e);
+    return null;
+  }
+}
+
+let syncInFlight = {};
+async function syncTableToAirtable(tableKey, items){
+  if (!AIRTABLE_TABLE_IDS[tableKey]) return;
+  if (syncInFlight[tableKey]) { syncInFlight[tableKey].pending = items; return; }
+  syncInFlight[tableKey] = { pending: null };
+  setSyncStatus('syncing');
+  try {
+    await doSyncTable(tableKey, items);
+    const again = syncInFlight[tableKey] && syncInFlight[tableKey].pending;
+    delete syncInFlight[tableKey];
+    if (again) return syncTableToAirtable(tableKey, again);
+    setSyncStatus('ok');
+  } catch(e){
+    console.error('Airtable sync failed', tableKey, e);
+    delete syncInFlight[tableKey];
+    setSyncStatus('error');
+  }
+}
+async function doSyncTable(tableKey, items){
+  const index = airtableRecordIndex[tableKey] || new Map();
+  const currentIds = new Set(items.map(it => tableKey==='customTypes' ? it : it.id));
+  const toCreate = [], toUpdate = [];
+  items.forEach(it=>{
+    const localId = tableKey==='customTypes' ? it : it.id;
+    const fields = toAirtableRecord(tableKey, it);
+    if (index.has(localId)) toUpdate.push({ id: index.get(localId), fields });
+    else toCreate.push(fields);
+  });
+  const toDeleteIds = [];
+  index.forEach((recId, localId)=>{ if (!currentIds.has(localId)) toDeleteIds.push(recId); });
+  if (toCreate.length){
+    const created = await airtableBatchCreate(tableKey, toCreate);
+    created.forEach(rec=>{ index.set(rec.fields.LocalId, rec.id); });
+  }
+  if (toUpdate.length) await airtableBatchUpdate(tableKey, toUpdate);
+  if (toDeleteIds.length){
+    await airtableBatchDelete(tableKey, toDeleteIds);
+    const idsToRemove = new Set(toDeleteIds);
+    for (const [localId, recId] of Array.from(index.entries())){
+      if (idsToRemove.has(recId)) index.delete(localId);
+    }
+  }
+  airtableRecordIndex[tableKey] = index;
+}
+
+function setSyncStatus(status){
+  const el = document.getElementById('syncStatus');
+  if (!el) return;
+  if (status==='syncing'){ el.textContent = '🔄 بيتزامن...'; el.style.color = 'var(--brass)'; }
+  else if (status==='ok'){ el.textContent = '✅ متصل بقاعدة البيانات المشتركة'; el.style.color = 'var(--surplus)'; }
+  else { el.textContent = '⚠️ تعذر الاتصال — بيشتغل بنسخة الجهاز ده'; el.style.color = 'var(--deficit)'; }
+}
+
+function save(key, val){
+  cacheLocal(key, val);
+  syncTableToAirtable(key, val);
+}
 
 let state = {
   commitments: load('commitments', []),
@@ -683,11 +840,11 @@ let users = load('users', []);
 let currentUser = null;
 
 if (!users.length){
+  // مستخدم احتياطي محلي بس (مش بيتزامن مع Airtable) — لو فشل الاتصال أول مرة على جهاز جديد بالكامل
   users = [{
-    id: uid(), username: 'admin', password: 'admin123',
-    displayName: 'المدير الأساسي', role: 'admin', approvalRole: '',
+    id: 'local-fallback-admin', username: 'admin', password: 'admin123',
+    displayName: 'المدير الأساسي (احتياطي محلي)', role: 'admin', approvalRole: '',
   }];
-  save('users', users);
 }
 
 function saveUsers(){ save('users', users); }
@@ -700,7 +857,41 @@ function tryAutoLogin(){
   }
 }
 
-function showApp(){
+let pollTimer = null;
+function isUserMidEdit(){
+  return !!document.querySelector('.add-form:not(.hidden), .edit-row:not(.hidden), .pay-row:not(.hidden), .approval-row:not(.hidden)');
+}
+async function hydrateAllFromAirtable(silent){
+  if (!silent) setSyncStatus('syncing');
+  const [rc, ri, rt, ra, rct] = await Promise.all([
+    loadFromAirtable('commitments'),
+    loadFromAirtable('inflows'),
+    loadFromAirtable('transactions'),
+    loadFromAirtable('accounts'),
+    loadFromAirtable('customTypes'),
+  ]);
+  let anyFail = false;
+  if (rc){ state.commitments = rc; cacheLocal('commitments', rc); } else anyFail = true;
+  if (ri){ state.inflows = ri; cacheLocal('inflows', ri); } else anyFail = true;
+  if (rt){ state.transactions = rt; cacheLocal('transactions', rt); } else anyFail = true;
+  if (ra){ accounts = ra; cacheLocal('accounts', ra); } else anyFail = true;
+  if (rct){ customTypes = rct; cacheLocal('customTypes', rct); } else anyFail = true;
+  renderCTypeSelect();
+  renderAccountsTable();
+  renderAll();
+  setSyncStatus(anyFail ? 'error' : 'ok');
+}
+
+function startPolling(){
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(()=>{
+    if (!currentUser) return;
+    if (isUserMidEdit()) return;
+    hydrateAllFromAirtable(true);
+  }, 15000);
+}
+
+async function showApp(){
   document.getElementById('loginScreen').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   document.getElementById('currentUserName').textContent = currentUser.displayName || currentUser.username;
@@ -712,6 +903,8 @@ function showApp(){
   renderCTypeSelect();
   renderAccountsTable();
   renderAll();
+  await hydrateAllFromAirtable();
+  startPolling();
 }
 
 function showLogin(msg){
@@ -719,6 +912,7 @@ function showLogin(msg){
   document.getElementById('loginScreen').classList.remove('hidden');
   document.getElementById('loginError').textContent = msg || '';
   document.body.classList.remove('role-accountant');
+  if (pollTimer){ clearInterval(pollTimer); pollTimer = null; }
 }
 
 function persistAndRenderData(){
@@ -2308,8 +2502,24 @@ document.getElementById('usersTbody').addEventListener('click', e=>{
 });
 
 // ---- boot ----
-tryAutoLogin();
-if (currentUser) showApp(); else showLogin('');
+async function boot(){
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true;
+  btn.textContent = 'جاري الاتصال بقاعدة البيانات...';
+  document.getElementById('loginError').textContent = '';
+  const remoteUsers = await loadFromAirtable('users');
+  if (remoteUsers && remoteUsers.length){
+    users = remoteUsers;
+    cacheLocal('users', users);
+  } else if (remoteUsers === null){
+    document.getElementById('loginError').textContent = 'تعذر الاتصال بقاعدة البيانات المشتركة. هيتم استخدام آخر نسخة محفوظة على الجهاز ده لحد ما يرجع الاتصال.';
+  }
+  btn.disabled = false;
+  btn.textContent = 'دخول';
+  tryAutoLogin();
+  if (currentUser) await showApp(); else showLogin('');
+}
+boot();
 </script>
 </body>
 </html>
