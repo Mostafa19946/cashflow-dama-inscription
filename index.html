@@ -462,6 +462,14 @@ body.role-accountant .certainty-select
 
     <div id="bulkBarCommit" class="bulk-bar hidden">
       <span id="bulkCountCommit">0 محدد</span>
+      <select id="bulkUrgencySelect" style="background:var(--surface-3); color:var(--ink); border:1px solid var(--line-strong); border-radius:6px; padding:6px 10px; font-size:12px;">
+        <option>عادي</option><option>مرتفع</option><option>عاجل</option><option>مؤجل</option>
+      </select>
+      <button class="btn-mini" id="bulkApplyUrgency">تطبيق الأهمية على المحدد</button>
+      <select id="bulkCompanySelect" style="background:var(--surface-3); color:var(--ink); border:1px solid var(--line-strong); border-radius:6px; padding:6px 10px; font-size:12px;">
+        <option>إنسكربشن</option><option>داما</option><option>ميدان</option>
+      </select>
+      <button class="btn-mini" id="bulkApplyCompany">تطبيق الشركة على المحدد</button>
       <button class="btn-mini btn-danger" id="bulkDeleteCommit">حذف المحدد</button>
       <button class="btn-mini" id="bulkClearCommit">إلغاء التحديد</button>
     </div>
@@ -521,6 +529,12 @@ body.role-accountant .certainty-select
 
     <div id="bulkBarInflow" class="bulk-bar hidden">
       <span id="bulkCountInflow">0 محدد</span>
+      <select id="bulkCertaintySelect" style="background:var(--surface-3); color:var(--ink); border:1px solid var(--line-strong); border-radius:6px; padding:6px 10px; font-size:12px;">
+        <option value="مؤكد">مؤكد</option>
+        <option value="محتمل">محتمل</option>
+        <option value="قيد التحقق">قيد التحقق</option>
+      </select>
+      <button class="btn-mini" id="bulkApplyCertainty">تطبيق الحالة على المحدد</button>
       <button class="btn-mini btn-danger" id="bulkDeleteInflow">حذف المحدد</button>
       <button class="btn-mini" id="bulkClearInflow">إلغاء التحديد</button>
     </div>
@@ -2025,6 +2039,26 @@ document.getElementById('bulkDeleteCommit').addEventListener('click', ()=>{
   state.selectedCommitIds.clear();
   persistAndRenderData('commitments');
 });
+document.getElementById('bulkApplyUrgency').addEventListener('click', ()=>{
+  const n = state.selectedCommitIds.size;
+  if (!n) return;
+  const newUrgency = document.getElementById('bulkUrgencySelect').value;
+  state.commitments.forEach(c=>{
+    if (state.selectedCommitIds.has(c.id)) c.urgency = newUrgency;
+  });
+  showToast(`✅ اتغيّرت أهمية ${n} التزام إلى "${newUrgency}"`, 'success');
+  persistAndRenderData('commitments');
+});
+document.getElementById('bulkApplyCompany').addEventListener('click', ()=>{
+  const n = state.selectedCommitIds.size;
+  if (!n) return;
+  const newCompany = document.getElementById('bulkCompanySelect').value;
+  state.commitments.forEach(c=>{
+    if (state.selectedCommitIds.has(c.id)) c.company = newCompany;
+  });
+  showToast(`✅ اتغيّرت شركة ${n} التزام إلى "${newCompany}"`, 'success');
+  persistAndRenderData('commitments');
+});
 
 document.getElementById('inflowTbody').addEventListener('click', e=>{
   const t = e.target;
@@ -2097,6 +2131,16 @@ document.getElementById('bulkDeleteInflow').addEventListener('click', ()=>{
   if (!confirm(`متأكد إنك عايز تحذف ${n} تدفق محدد؟ الإجراء ده مش قابل للتراجع.`)) return;
   state.inflows = state.inflows.filter(f=>!state.selectedInflowIds.has(f.id));
   state.selectedInflowIds.clear();
+  persistAndRenderData('inflows');
+});
+document.getElementById('bulkApplyCertainty').addEventListener('click', ()=>{
+  const n = state.selectedInflowIds.size;
+  if (!n) return;
+  const newCertainty = document.getElementById('bulkCertaintySelect').value;
+  state.inflows.forEach(f=>{
+    if (state.selectedInflowIds.has(f.id)) f.certainty = newCertainty;
+  });
+  showToast(`✅ اتغيّرت حالة ${n} تحصيل إلى "${newCertainty}"`, 'success');
   persistAndRenderData('inflows');
 });
 
