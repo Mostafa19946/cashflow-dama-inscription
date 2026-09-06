@@ -302,6 +302,7 @@ body.role-accountant .certainty-select
         <span id="syncStatus" style="font-size:11px;">🔄 بيتزامن...</span>
         <span>مسجل دخول: <b id="currentUserName">—</b></span>
         <span class="role-tag" id="currentUserRoleTag">—</span>
+        <button class="logout-btn" id="openProfileBtn">✍️ توقيعي</button>
         <button class="logout-btn" id="logoutBtn">تسجيل خروج</button>
       </div>
       <div class="cf-balance-box">
@@ -338,6 +339,22 @@ body.role-accountant .certainty-select
     </div>
     <p class="panel-sub" style="margin-top:10px; text-align:left; direction:ltr;">الإجمالي: <b id="accountsTotal" style="color:var(--brass); font-family:'IBM Plex Mono',monospace; font-size:15px;">0</b> ج.م</p>
   </section>
+
+  <section class="cf-panel hidden" id="profilePanel" style="margin-bottom:20px;">
+    <div class="panel-head">
+      <h2>✍️ توقيعي الشخصي</h2>
+      <p class="panel-sub">وقّع مرة واحدة هنا، وتوقيعك هيتضاف تلقائيًا لأي اعتماد تعمله من أي جهاز، وهيظهر في نموذج طلب الدفع المطبوع.</p>
+    </div>
+    <div id="currentSignaturePreview" style="margin-bottom:12px;"></div>
+    <canvas id="signaturePad" width="500" height="160" style="background:#fff; border:1px solid var(--line-strong); border-radius:8px; touch-action:none; cursor:crosshair; max-width:100%;"></canvas>
+    <div class="btn-row" style="margin-top:10px;">
+      <button class="btn-primary btn-sm" id="saveSignatureBtn">حفظ التوقيع</button>
+      <button class="btn-mini" id="clearSignatureBtn">مسح اللوحة</button>
+      <button class="btn-mini btn-danger" id="removeSignatureBtn">حذف التوقيع المحفوظ</button>
+      <button class="btn-mini" id="closeProfileBtn">إغلاق</button>
+    </div>
+  </section>
+
   <section class="cf-stats">
     <div class="stat-card clickable" id="cardBalance">
       <span class="stat-label">💰 الرصيد الحالي الفعلي</span>
@@ -771,15 +788,25 @@ function printPaymentOrder(commitId){
   const c = state.commitments.find(x=>x.id===commitId);
   if (!c) return;
   const approvals = c.approvals || emptyApprovals();
+  const details = c.approvalDetails || {};
   const per = paymentOrderPeriods(c);
   const days = daysBetween(c.requestDate, c.dueDate);
   const approvalRowsHtml = APPROVAL_ROLES.map((r,i)=>{
     const done = !!approvals[r.key];
+    const d = details[r.key];
+    let signCell;
+    if (!done){
+      signCell = '<div class="print-sign-box"></div>';
+    } else if (d && d.signature){
+      signCell = `<img src="${d.signature}" style="max-height:44px; max-width:150px;" /><div style="font-size:9px; color:#555;">${escapeHtml(d.signedBy||'')} — ${d.signedDate?fmtDateLabel(d.signedDate):''}</div>`;
+    } else {
+      signCell = `<div style="font-size:10.5px;">${escapeHtml((d&&d.signedBy)||'')}${d&&d.signedDate?' — '+fmtDateLabel(d.signedDate):''}</div>`;
+    }
     return `<tr>
       <td style="width:26px; text-align:center;">${i+1}</td>
       <td>${escapeHtml(r.label)}</td>
       <td style="width:70px; text-align:center;">${done ? '✅ معتمد' : '⬜ لسه'}</td>
-      <td style="width:160px;">${done ? '' : '<div class="print-sign-box"></div>'}</td>
+      <td style="width:160px;">${signCell}</td>
     </tr>`;
   }).join('');
   const html = `<div class="print-doc">
@@ -909,7 +936,7 @@ let airtableRecordIndex = {};
 Object.keys(AIRTABLE_TABLE_IDS).forEach(k=>{ airtableRecordIndex[k] = new Map(); });
 
 function toAirtableRecord(tableKey, obj){
-  if (tableKey === 'commitments') return { LocalId: obj.id, Name: obj.name||'', Type: obj.type||'', TotalAmount: Number(obj.totalAmount)||0, RemainingAmount: Number(obj.remainingAmount)||0, DueDate: obj.dueDate||'', Recurrence: obj.recurrence||'', Notes: obj.notes||'', RequestNumber: obj.requestNumber||'', PaymentRequestNumber: obj.paymentRequestNumber||'', PaymentRequestDate: obj.paymentRequestDate||'', RequestDate: obj.requestDate||'', Urgency: obj.urgency||'', ApprovalsJSON: JSON.stringify({ approvals: obj.approvals||{}, company: obj.company||'', paymentOrderNumber: obj.paymentOrderNumber||'', paymentOrderDate: obj.paymentOrderDate||'' }) };
+  if (tableKey === 'commitments') return { LocalId: obj.id, Name: obj.name||'', Type: obj.type||'', TotalAmount: Number(obj.totalAmount)||0, RemainingAmount: Number(obj.remainingAmount)||0, DueDate: obj.dueDate||'', Recurrence: obj.recurrence||'', Notes: obj.notes||'', RequestNumber: obj.requestNumber||'', PaymentRequestNumber: obj.paymentRequestNumber||'', PaymentRequestDate: obj.paymentRequestDate||'', RequestDate: obj.requestDate||'', Urgency: obj.urgency||'', ApprovalsJSON: JSON.stringify({ approvals: obj.approvals||{}, company: obj.company||'', paymentOrderNumber: obj.paymentOrderNumber||'', paymentOrderDate: obj.paymentOrderDate||'', approvalDetails: obj.approvalDetails||{} }) };
   if (tableKey === 'inflows') return { LocalId: obj.id, Name: obj.name||'', Source: obj.source||'', ExpectedAmount: Number(obj.expectedAmount)||0, RemainingAmount: Number(obj.remainingAmount)||0, ExpectedDate: obj.expectedDate||'', Notes: obj.notes||'', Certainty: obj.certainty||'' };
   if (tableKey === 'transactions') return { LocalId: obj.id, Kind: obj.kind||'', RefId: obj.refId||'', RefName: obj.refName||'', Amount: Number(obj.amount)||0, Date: obj.date||'', AccountId: obj.accountId||'' };
   if (tableKey === 'accounts') return { LocalId: obj.id, Name: obj.name||'', Type: obj.type||'', Balance: Number(obj.balance)||0 };
@@ -920,7 +947,7 @@ function toAirtableRecord(tableKey, obj){
 function fromAirtableRecord(tableKey, rec){
   const f = rec.fields || {};
   if (tableKey === 'commitments'){
-    let approvals = emptyApprovals(), company = '', paymentOrderNumber = '', paymentOrderDate = '';
+    let approvals = emptyApprovals(), company = '', paymentOrderNumber = '', paymentOrderDate = '', approvalDetails = {};
     try {
       const parsed = JSON.parse(f.ApprovalsJSON||'{}');
       if (parsed && typeof parsed==='object'){
@@ -929,23 +956,24 @@ function fromAirtableRecord(tableKey, rec){
           company = parsed.company||'';
           paymentOrderNumber = parsed.paymentOrderNumber||'';
           paymentOrderDate = parsed.paymentOrderDate||'';
+          approvalDetails = parsed.approvalDetails||{};
         } else if ('accountsManager' in parsed || 'financialManager' in parsed || 'chairman' in parsed || 'viceChairman' in parsed){
           approvals = parsed; // صيغة قديمة: الملف كان فيه الاعتمادات مباشرة من غير تغليف
         }
       }
     } catch(e){ /* يفضل القيم الافتراضية */ }
     const attachments = Array.isArray(f.Attachments) ? f.Attachments.map(a=>({ id:a.id, url:a.url, filename:a.filename, size:a.size })) : [];
-    return { id: f.LocalId, name: f.Name||'', type: f.Type||'', company, totalAmount: Number(f.TotalAmount)||0, remainingAmount: Number(f.RemainingAmount)||0, dueDate: f.DueDate||'', recurrence: f.Recurrence||'', notes: f.Notes||'', requestNumber: f.RequestNumber||'', paymentRequestNumber: f.PaymentRequestNumber||'', paymentRequestDate: f.PaymentRequestDate||'', requestDate: f.RequestDate||'', urgency: f.Urgency||'عادي', approvals, paymentOrderNumber, paymentOrderDate, attachments };
+    return { id: f.LocalId, name: f.Name||'', type: f.Type||'', company, totalAmount: Number(f.TotalAmount)||0, remainingAmount: Number(f.RemainingAmount)||0, dueDate: f.DueDate||'', recurrence: f.Recurrence||'', notes: f.Notes||'', requestNumber: f.RequestNumber||'', paymentRequestNumber: f.PaymentRequestNumber||'', paymentRequestDate: f.PaymentRequestDate||'', requestDate: f.RequestDate||'', urgency: f.Urgency||'عادي', approvals, paymentOrderNumber, paymentOrderDate, attachments, approvalDetails };
   }
   if (tableKey === 'inflows') return { id: f.LocalId, name: f.Name||'', source: f.Source||'', expectedAmount: Number(f.ExpectedAmount)||0, remainingAmount: Number(f.RemainingAmount)||0, expectedDate: f.ExpectedDate||'', notes: f.Notes||'', certainty: f.Certainty||'مؤكد' };
   if (tableKey === 'transactions') return { id: f.LocalId, kind: f.Kind||'', refId: f.RefId||'', refName: f.RefName||'', amount: Number(f.Amount)||0, date: f.Date||'', accountId: f.AccountId||null };
   if (tableKey === 'accounts') return { id: f.LocalId, name: f.Name||'', type: f.Type||'', balance: Number(f.Balance)||0 };
-  if (tableKey === 'users') return { id: f.LocalId, username: f.Username||'', password: f.Password||'', displayName: f.DisplayName||'', role: f.Role||'user', approvalRole: f.ApprovalRole||'' };
+  if (tableKey === 'users') return { id: f.LocalId, username: f.Username||'', password: f.Password||'', displayName: f.DisplayName||'', role: f.Role||'user', approvalRole: f.ApprovalRole||'', signatureData: f.SignatureData||'' };
   if (tableKey === 'customTypes') return f.Name || f.LocalId || '';
   return null;
 }
 
-async function airtableApi(method, tableKey, qs, body){
+async function airtableApi(method, tableKey, qs, body, _isRetry){
   const tblId = AIRTABLE_TABLE_IDS[tableKey];
   const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${tblId}${qs||''}`;
   const res = await fetch(url, {
@@ -953,7 +981,20 @@ async function airtableApi(method, tableKey, qs, body){
     headers: { 'Authorization': 'Bearer ' + AIRTABLE_TOKEN, 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok){ const t = await res.text(); throw new Error('Airtable '+method+' '+tableKey+' failed: '+res.status+' '+t); }
+  if (!res.ok){
+    const t = await res.text();
+    const m = t.match(/Unknown field name:\s*"([^"]+)"/);
+    if (m && body && Array.isArray(body.records)){
+      const badField = m[1];
+      let removed = false;
+      body.records.forEach(r=>{ if (r.fields && (badField in r.fields)){ delete r.fields[badField]; removed = true; } });
+      if (removed){
+        showToast(`⚠️ عمود "${badField}" لسه مش موجود في Airtable — البيانات الباقية اتحفظت، بس البيانات المرتبطة بالعمود ده اتجاهلت مؤقتًا. أضيفه في القاعدة عشان يشتغل بالكامل.`, 'error');
+        return airtableApi(method, tableKey, qs, body, true);
+      }
+    }
+    throw new Error('Airtable '+method+' '+tableKey+' failed: '+res.status+' '+t);
+  }
   return res.json();
 }
 async function airtableListAll(tableKey){
@@ -1295,6 +1336,95 @@ function startPolling(){
     hydrateAllFromAirtable(true);
   }, 10000);
 }
+
+// ---- التوقيع الشخصي ----
+let sigCtx = null, sigDrawing = false, sigHasDrawn = false;
+function initSignatureCanvas(){
+  const canvas = document.getElementById('signaturePad');
+  if (!canvas) return;
+  sigCtx = canvas.getContext('2d');
+  sigCtx.lineWidth = 2.2;
+  sigCtx.lineCap = 'round';
+  sigCtx.strokeStyle = '#1a1a1a';
+  function getPos(e){
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return { x: (clientX-rect.left)*scaleX, y: (clientY-rect.top)*scaleY };
+  }
+  function start(e){ sigDrawing = true; sigHasDrawn = true; const p = getPos(e); sigCtx.beginPath(); sigCtx.moveTo(p.x,p.y); e.preventDefault(); }
+  function move(e){ if (!sigDrawing) return; const p = getPos(e); sigCtx.lineTo(p.x,p.y); sigCtx.stroke(); e.preventDefault(); }
+  function end(){ sigDrawing = false; }
+  canvas.addEventListener('mousedown', start);
+  canvas.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', end);
+  canvas.addEventListener('touchstart', start, { passive:false });
+  canvas.addEventListener('touchmove', move, { passive:false });
+  canvas.addEventListener('touchend', end);
+}
+function clearSignatureCanvas(){
+  const canvas = document.getElementById('signaturePad');
+  sigCtx.fillStyle = '#fff';
+  sigCtx.fillRect(0,0,canvas.width,canvas.height);
+  sigHasDrawn = false;
+}
+function renderSignaturePreview(){
+  const box = document.getElementById('currentSignaturePreview');
+  if (!box) return;
+  if (currentUser.signatureData){
+    box.innerHTML = `<p class="panel-sub" style="margin-bottom:6px;">توقيعك المحفوظ حاليًا:</p><img src="${currentUser.signatureData}" style="max-height:60px; background:#fff; border-radius:6px; padding:4px 8px; border:1px solid var(--line-strong);" />`;
+  } else {
+    box.innerHTML = '<p class="panel-sub">لسه معملتش توقيع محفوظ. ارسم توقيعك تحت واضغط "حفظ التوقيع".</p>';
+  }
+}
+async function saveUserSignatureToAirtable(userId, dataUrl){
+  const idxEntry = airtableRecordIndex.users && airtableRecordIndex.users.get(userId);
+  if (!idxEntry){
+    showToast('⚠️ حسابك لسه مش متزامن مع القاعدة المشتركة، جرّب تاني بعد شوية.', 'error');
+    return false;
+  }
+  try {
+    await airtableApi('PATCH', 'users', '', { records: [{ id: idxEntry.recordId, fields: { SignatureData: dataUrl||'' } }] });
+    return true;
+  } catch(e){
+    console.error(e);
+    showToast('❌ فشل حفظ التوقيع في القاعدة المشتركة (تأكد من وجود عمود SignatureData في جدول Users) — هيفضل شغال على الجهاز ده بس.', 'error');
+    return false;
+  }
+}
+document.getElementById('openProfileBtn').addEventListener('click', ()=>{
+  document.getElementById('profilePanel').classList.remove('hidden');
+  document.getElementById('profilePanel').scrollIntoView({ behavior:'smooth', block:'start' });
+  clearSignatureCanvas();
+  renderSignaturePreview();
+});
+document.getElementById('closeProfileBtn').addEventListener('click', ()=>{
+  document.getElementById('profilePanel').classList.add('hidden');
+});
+document.getElementById('clearSignatureBtn').addEventListener('click', clearSignatureCanvas);
+document.getElementById('saveSignatureBtn').addEventListener('click', async ()=>{
+  if (!sigHasDrawn){ alert('ارسم توقيعك الأول في اللوحة تحت.'); return; }
+  const canvas = document.getElementById('signaturePad');
+  const dataUrl = canvas.toDataURL('image/png');
+  currentUser.signatureData = dataUrl;
+  const u = users.find(x=>x.id===currentUser.id);
+  if (u) u.signatureData = dataUrl;
+  const ok = await saveUserSignatureToAirtable(currentUser.id, dataUrl);
+  renderSignaturePreview();
+  if (ok) showToast('✍️ تم حفظ توقيعك بنجاح، وهيتضاف تلقائيًا لأي اعتماد تعمله.', 'success');
+});
+document.getElementById('removeSignatureBtn').addEventListener('click', async ()=>{
+  if (!currentUser.signatureData){ showToast('مفيش توقيع محفوظ أصلاً.', 'info'); return; }
+  if (!confirm('متأكد إنك عايز تحذف توقيعك المحفوظ؟')) return;
+  currentUser.signatureData = '';
+  const u = users.find(x=>x.id===currentUser.id);
+  if (u) u.signatureData = '';
+  const ok = await saveUserSignatureToAirtable(currentUser.id, '');
+  clearSignatureCanvas();
+  renderSignaturePreview();
+  if (ok) showToast('🗑️ تم حذف التوقيع المحفوظ.', 'success');
+});
 
 async function showApp(){
   document.getElementById('loginScreen').classList.add('hidden');
@@ -1740,9 +1870,11 @@ function renderCommitTable(){
             const done = !!approvals[r.key];
             const prereqOk = approvalPrereqOk(approvals, r.key);
             const isAltPair = r.key==='viceChairman' || r.key==='chairman';
+            const detail = (c.approvalDetails||{})[r.key];
+            const sigImg = (done && detail && detail.signature) ? `<img src="${detail.signature}" style="height:22px; vertical-align:middle; margin-inline-start:6px; background:#fff; border-radius:3px; padding:1px 3px;" />` : '';
             return `<label class="approval-step ${done?'done':''} ${!prereqOk && !done ? 'locked':''}">
               <input type="checkbox" class="approval-check" data-id="${c.id}" data-role="${r.key}" ${done?'checked':''} ${(!prereqOk && !done)?'disabled':''} />
-              <span>${i+1}. ${r.label}${isAltPair?' (يكفي واحد منهم)':''}</span>
+              <span>${i+1}. ${r.label}${isAltPair?' (يكفي واحد منهم)':''}${sigImg}</span>
             </label>`;
           }).join('')}
         </div>
@@ -2374,12 +2506,20 @@ document.getElementById('commitTbody').addEventListener('change', e=>{
       return;
     }
     if (!c.approvals) c.approvals = emptyApprovals();
+    if (!c.approvalDetails) c.approvalDetails = {};
     if (t.checked){
       if (!approvalPrereqOk(c.approvals, role)){ alert('لازم الاعتماد اللي قبله يتم الأول.'); renderAll(); return; }
       c.approvals[role] = true;
+      c.approvalDetails[role] = {
+        signature: currentUser.signatureData || null,
+        signedBy: currentUser.displayName || currentUser.username,
+        signedDate: todayStr(),
+      };
     } else {
       c.approvals[role] = false;
       cascadeResetChildren(c.approvals, role);
+      delete c.approvalDetails[role];
+      (APPROVAL_CASCADE_CHILDREN[role]||[]).forEach(k=>delete c.approvalDetails[k]);
     }
     const justIssued = issuePaymentOrderIfReady(c);
     markLocalAction(id);
@@ -3117,6 +3257,7 @@ async function boot(){
   tryAutoLogin();
   if (currentUser) await showApp(); else showLogin('');
 }
+initSignatureCanvas();
 boot();
 </script>
 </body>
