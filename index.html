@@ -413,8 +413,22 @@ body.role-accountant .certainty-select
         <button class="btn-mini btn-danger" id="clearAllCommits" style="align-self:center;">🗑️ حذف كل الالتزامات</button>
       </div>
     </div>
-    <div class="search-row">
-      <input type="text" id="commitSearchInput" placeholder="🔍 ابحث بالاسم..." />
+    <div class="search-row" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+      <input type="text" id="commitSearchInput" placeholder="🔍 ابحث بالاسم..." style="flex:1; min-width:180px;" />
+      <button class="btn-mini" id="toggleCommitFilters">🔍 فلاتر متقدمة</button>
+    </div>
+    <div id="commitAdvFilters" class="add-form hidden">
+      <div class="form-grid">
+        <div class="f-field"><label>الشركة</label><select id="filterCommitCompany"><option value="">الكل</option><option>إنسكربشن</option><option>داما</option><option>ميدان</option></select></div>
+        <div class="f-field"><label>النوع</label><select id="filterCommitType"><option value="">الكل</option></select></div>
+        <div class="f-field"><label>الأهمية</label><select id="filterCommitUrgency"><option value="">الكل</option><option>عادي</option><option>مرتفع</option><option>عاجل</option><option>مؤجل</option></select></div>
+        <div class="f-field"><label>الحالة</label><select id="filterCommitStatus"><option value="">الكل</option><option value="مستحق">مستحق</option><option value="متأخر">متأخر</option><option value="مسدد">مسدد</option><option value="تاريخ غير صحيح">تاريخ غير صحيح</option></select></div>
+        <div class="f-field"><label>الاستحقاق من</label><input type="date" id="filterCommitDueFrom" /></div>
+        <div class="f-field"><label>الاستحقاق إلى</label><input type="date" id="filterCommitDueTo" /></div>
+        <div class="f-field"><label>المتبقي من</label><input type="number" id="filterCommitMinRem" placeholder="0" /></div>
+        <div class="f-field"><label>المتبقي إلى</label><input type="number" id="filterCommitMaxRem" placeholder="بدون حد" /></div>
+      </div>
+      <button class="btn-mini" id="clearCommitAdvFilters">مسح كل الفلاتر</button>
     </div>
     <div id="commitFilterBanner" class="filter-banner hidden">
       <span id="commitFilterLabel"></span>
@@ -495,8 +509,21 @@ body.role-accountant .certainty-select
         <button class="btn-mini btn-danger" id="clearAllInflows" style="align-self:center;">🗑️ حذف كل التحصيلات</button>
       </div>
     </div>
-    <div class="search-row">
-      <input type="text" id="inflowSearchInput" placeholder="🔍 ابحث بالاسم..." />
+    <div class="search-row" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+      <input type="text" id="inflowSearchInput" placeholder="🔍 ابحث بالاسم..." style="flex:1; min-width:180px;" />
+      <button class="btn-mini" id="toggleInflowFilters">🔍 فلاتر متقدمة</button>
+    </div>
+    <div id="inflowAdvFilters" class="add-form hidden">
+      <div class="form-grid">
+        <div class="f-field"><label>حالة التحصيل</label><select id="filterInflowCertainty"><option value="">الكل</option><option>مؤكد</option><option>محتمل</option><option>قيد التحقق</option></select></div>
+        <div class="f-field"><label>الحالة</label><select id="filterInflowStatus"><option value="">الكل</option><option value="متوقع">متوقع</option><option value="متأخر">متأخر</option><option value="محصّل">محصّل</option><option value="تاريخ غير صحيح">تاريخ غير صحيح</option></select></div>
+        <div class="f-field"><label>المصدر</label><input type="text" id="filterInflowSource" placeholder="ابحث بالمصدر" /></div>
+        <div class="f-field"><label>التاريخ من</label><input type="date" id="filterInflowDateFrom" /></div>
+        <div class="f-field"><label>التاريخ إلى</label><input type="date" id="filterInflowDateTo" /></div>
+        <div class="f-field"><label>المتبقي من</label><input type="number" id="filterInflowMinRem" placeholder="0" /></div>
+        <div class="f-field"><label>المتبقي إلى</label><input type="number" id="filterInflowMaxRem" placeholder="بدون حد" /></div>
+      </div>
+      <button class="btn-mini" id="clearInflowAdvFilters">مسح كل الفلاتر</button>
     </div>
     <div id="inflowFilterBanner" class="filter-banner hidden">
       <span id="inflowFilterLabel"></span>
@@ -625,6 +652,12 @@ function typeSelectOptionsHtml(current){
 }
 function renderCTypeSelect(){
   document.getElementById('cType').innerHTML = typeSelectOptionsHtml(allCommitTypes()[0]);
+  const filterSel = document.getElementById('filterCommitType');
+  if (filterSel){
+    const current = filterSel.value;
+    filterSel.innerHTML = '<option value="">الكل</option>' + allCommitTypes().map(t=>`<option value="${escapeAttr(t)}">${escapeHtml(t)}</option>`).join('');
+    filterSel.value = current;
+  }
 }
 const URGENCY_LEVELS = ["عادي","مرتفع","عاجل","مؤجل"];
 const COMPANIES = ["إنسكربشن","داما","ميدان"];
@@ -920,6 +953,8 @@ let state = {
   inflowSearch: '',
   commitCategoryFilter: null,
   inflowCategoryFilter: null,
+  commitAdvFilters: { company:'', type:'', urgency:'', status:'', dueFrom:'', dueTo:'', minRem:'', maxRem:'' },
+  inflowAdvFilters: { certainty:'', status:'', source:'', dateFrom:'', dateTo:'', minRem:'', maxRem:'' },
 };
 
 let accounts = load('accounts', []);
@@ -1090,6 +1125,18 @@ function inflowStatus(f){
   if (!isSaneDate(f.expectedDate)) return {label:'تاريخ غير صحيح ⚠️', cls:'st-late'};
   if (f.expectedDate < todayStr()) return {label:'متأخر', cls:'st-late'};
   return {label:'متوقع', cls:'st-due'};
+}
+function commitStatusCategory(c){
+  if (c.remainingAmount<=0) return 'مسدد';
+  if (!isSaneDate(c.dueDate)) return 'تاريخ غير صحيح';
+  if (isLateCommitment(c)) return 'متأخر';
+  return 'مستحق';
+}
+function inflowStatusCategory(f){
+  if (f.remainingAmount<=0) return 'محصّل';
+  if (!isSaneDate(f.expectedDate)) return 'تاريخ غير صحيح';
+  if (f.expectedDate < todayStr()) return 'متأخر';
+  return 'متوقع';
 }
 
 function renderStats(){
@@ -1344,8 +1391,19 @@ function renderCommitTable(){
   } else {
     banner.classList.add('hidden');
   }
+  const af = state.commitAdvFilters;
+  const advActive = !!(af.company||af.type||af.urgency||af.status||af.dueFrom||af.dueTo||af.minRem||af.maxRem);
+  if (af.company) allRows = allRows.filter(c=>c.company===af.company);
+  if (af.type) allRows = allRows.filter(c=>c.type===af.type);
+  if (af.urgency) allRows = allRows.filter(c=>(c.urgency||'عادي')===af.urgency);
+  if (af.status) allRows = allRows.filter(c=>commitStatusCategory(c)===af.status);
+  if (af.dueFrom) allRows = allRows.filter(c=>c.dueDate>=af.dueFrom);
+  if (af.dueTo) allRows = allRows.filter(c=>c.dueDate<=af.dueTo);
+  if (af.minRem!=='' && af.minRem!=null) allRows = allRows.filter(c=>c.remainingAmount>=parseFloat(af.minRem));
+  if (af.maxRem!=='' && af.maxRem!=null) allRows = allRows.filter(c=>c.remainingAmount<=parseFloat(af.maxRem));
+  document.getElementById('toggleCommitFilters').classList.toggle('btn-primary', advActive);
   if (!allRows.length){
-    tbody.innerHTML = `<tr><td colspan="13" class="empty">${state.commitSearch.trim() || state.commitCategoryFilter ? 'مفيش نتائج مطابقة' : 'لا توجد التزامات مسجّلة بعد'}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="13" class="empty">${state.commitSearch.trim() || state.commitCategoryFilter || advActive ? 'مفيش نتائج مطابقة' : 'لا توجد التزامات مسجّلة بعد'}</td></tr>`;
     renderBulkBar('commit');
     renderPager('commit', 0, 0);
     return;
@@ -1473,8 +1531,18 @@ function renderInflowTable(){
   } else {
     inflowBanner.classList.add('hidden');
   }
+  const iaf = state.inflowAdvFilters;
+  const inflowAdvActive = !!(iaf.certainty||iaf.status||iaf.source||iaf.dateFrom||iaf.dateTo||iaf.minRem||iaf.maxRem);
+  if (iaf.certainty) allRows = allRows.filter(f=>(f.certainty||'مؤكد')===iaf.certainty);
+  if (iaf.status) allRows = allRows.filter(f=>inflowStatusCategory(f)===iaf.status);
+  if (iaf.source) allRows = allRows.filter(f=>(f.source||'').toLowerCase().includes(iaf.source.toLowerCase()));
+  if (iaf.dateFrom) allRows = allRows.filter(f=>f.expectedDate>=iaf.dateFrom);
+  if (iaf.dateTo) allRows = allRows.filter(f=>f.expectedDate<=iaf.dateTo);
+  if (iaf.minRem!=='' && iaf.minRem!=null) allRows = allRows.filter(f=>f.remainingAmount>=parseFloat(iaf.minRem));
+  if (iaf.maxRem!=='' && iaf.maxRem!=null) allRows = allRows.filter(f=>f.remainingAmount<=parseFloat(iaf.maxRem));
+  document.getElementById('toggleInflowFilters').classList.toggle('btn-primary', inflowAdvActive);
   if (!allRows.length){
-    tbody.innerHTML = `<tr><td colspan="9" class="empty">${state.inflowSearch.trim() || state.inflowCategoryFilter ? 'مفيش نتائج مطابقة' : 'لا توجد تدفقات داخلة مسجّلة بعد'}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty">${state.inflowSearch.trim() || state.inflowCategoryFilter || inflowAdvActive ? 'مفيش نتائج مطابقة' : 'لا توجد تدفقات داخلة مسجّلة بعد'}</td></tr>`;
     renderBulkBar('inflow');
     renderPager('inflow', 0, 0);
     return;
@@ -2180,6 +2248,59 @@ document.getElementById('commitSearchInput').addEventListener('input', e=>{
 });
 document.getElementById('inflowSearchInput').addEventListener('input', e=>{
   state.inflowSearch = e.target.value;
+  state.inflowPage = 0;
+  renderInflowTable();
+});
+
+document.getElementById('toggleCommitFilters').addEventListener('click', ()=>{
+  document.getElementById('commitAdvFilters').classList.toggle('hidden');
+});
+document.getElementById('toggleInflowFilters').addEventListener('click', ()=>{
+  document.getElementById('inflowAdvFilters').classList.toggle('hidden');
+});
+
+const COMMIT_FILTER_FIELDS = [
+  ['filterCommitCompany','company'], ['filterCommitType','type'], ['filterCommitUrgency','urgency'],
+  ['filterCommitStatus','status'], ['filterCommitDueFrom','dueFrom'], ['filterCommitDueTo','dueTo'],
+  ['filterCommitMinRem','minRem'], ['filterCommitMaxRem','maxRem'],
+];
+COMMIT_FILTER_FIELDS.forEach(([elId, key])=>{
+  const el = document.getElementById(elId);
+  const evt = (el.tagName==='SELECT' || el.type==='date') ? 'change' : 'input';
+  el.addEventListener(evt, ()=>{
+    state.commitAdvFilters[key] = el.value;
+    state.commitPage = 0;
+    renderCommitTable();
+  });
+});
+document.getElementById('clearCommitAdvFilters').addEventListener('click', ()=>{
+  COMMIT_FILTER_FIELDS.forEach(([elId, key])=>{
+    document.getElementById(elId).value = '';
+    state.commitAdvFilters[key] = '';
+  });
+  state.commitPage = 0;
+  renderCommitTable();
+});
+
+const INFLOW_FILTER_FIELDS = [
+  ['filterInflowCertainty','certainty'], ['filterInflowStatus','status'], ['filterInflowSource','source'],
+  ['filterInflowDateFrom','dateFrom'], ['filterInflowDateTo','dateTo'],
+  ['filterInflowMinRem','minRem'], ['filterInflowMaxRem','maxRem'],
+];
+INFLOW_FILTER_FIELDS.forEach(([elId, key])=>{
+  const el = document.getElementById(elId);
+  const evt = (el.tagName==='SELECT' || el.type==='date') ? 'change' : 'input';
+  el.addEventListener(evt, ()=>{
+    state.inflowAdvFilters[key] = el.value;
+    state.inflowPage = 0;
+    renderInflowTable();
+  });
+});
+document.getElementById('clearInflowAdvFilters').addEventListener('click', ()=>{
+  INFLOW_FILTER_FIELDS.forEach(([elId, key])=>{
+    document.getElementById(elId).value = '';
+    state.inflowAdvFilters[key] = '';
+  });
   state.inflowPage = 0;
   renderInflowTable();
 });
