@@ -780,7 +780,7 @@ let airtableRecordIndex = {};
 Object.keys(AIRTABLE_TABLE_IDS).forEach(k=>{ airtableRecordIndex[k] = new Map(); });
 
 function toAirtableRecord(tableKey, obj){
-  if (tableKey === 'commitments') return { LocalId: obj.id, Name: obj.name||'', Type: obj.type||'', Company: obj.company||'', TotalAmount: Number(obj.totalAmount)||0, RemainingAmount: Number(obj.remainingAmount)||0, DueDate: obj.dueDate||'', Recurrence: obj.recurrence||'', Notes: obj.notes||'', RequestNumber: obj.requestNumber||'', PaymentRequestNumber: obj.paymentRequestNumber||'', PaymentRequestDate: obj.paymentRequestDate||'', RequestDate: obj.requestDate||'', Urgency: obj.urgency||'', ApprovalsJSON: JSON.stringify(obj.approvals||{}), PaymentOrderNumber: obj.paymentOrderNumber||'', PaymentOrderDate: obj.paymentOrderDate||'' };
+  if (tableKey === 'commitments') return { LocalId: obj.id, Name: obj.name||'', Type: obj.type||'', TotalAmount: Number(obj.totalAmount)||0, RemainingAmount: Number(obj.remainingAmount)||0, DueDate: obj.dueDate||'', Recurrence: obj.recurrence||'', Notes: obj.notes||'', RequestNumber: obj.requestNumber||'', PaymentRequestNumber: obj.paymentRequestNumber||'', PaymentRequestDate: obj.paymentRequestDate||'', RequestDate: obj.requestDate||'', Urgency: obj.urgency||'', ApprovalsJSON: JSON.stringify({ approvals: obj.approvals||{}, company: obj.company||'', paymentOrderNumber: obj.paymentOrderNumber||'', paymentOrderDate: obj.paymentOrderDate||'' }) };
   if (tableKey === 'inflows') return { LocalId: obj.id, Name: obj.name||'', Source: obj.source||'', ExpectedAmount: Number(obj.expectedAmount)||0, RemainingAmount: Number(obj.remainingAmount)||0, ExpectedDate: obj.expectedDate||'', Notes: obj.notes||'', Certainty: obj.certainty||'' };
   if (tableKey === 'transactions') return { LocalId: obj.id, Kind: obj.kind||'', RefId: obj.refId||'', RefName: obj.refName||'', Amount: Number(obj.amount)||0, Date: obj.date||'', AccountId: obj.accountId||'' };
   if (tableKey === 'accounts') return { LocalId: obj.id, Name: obj.name||'', Type: obj.type||'', Balance: Number(obj.balance)||0 };
@@ -791,8 +791,21 @@ function toAirtableRecord(tableKey, obj){
 function fromAirtableRecord(tableKey, rec){
   const f = rec.fields || {};
   if (tableKey === 'commitments'){
-    let approvals; try{ approvals = JSON.parse(f.ApprovalsJSON||'{}'); }catch(e){ approvals = emptyApprovals(); }
-    return { id: f.LocalId, name: f.Name||'', type: f.Type||'', company: f.Company||'', totalAmount: Number(f.TotalAmount)||0, remainingAmount: Number(f.RemainingAmount)||0, dueDate: f.DueDate||'', recurrence: f.Recurrence||'', notes: f.Notes||'', requestNumber: f.RequestNumber||'', paymentRequestNumber: f.PaymentRequestNumber||'', paymentRequestDate: f.PaymentRequestDate||'', requestDate: f.RequestDate||'', urgency: f.Urgency||'عادي', approvals, paymentOrderNumber: f.PaymentOrderNumber||'', paymentOrderDate: f.PaymentOrderDate||'' };
+    let approvals = emptyApprovals(), company = '', paymentOrderNumber = '', paymentOrderDate = '';
+    try {
+      const parsed = JSON.parse(f.ApprovalsJSON||'{}');
+      if (parsed && typeof parsed==='object'){
+        if (parsed.approvals){
+          approvals = parsed.approvals;
+          company = parsed.company||'';
+          paymentOrderNumber = parsed.paymentOrderNumber||'';
+          paymentOrderDate = parsed.paymentOrderDate||'';
+        } else if ('accountsManager' in parsed || 'financialManager' in parsed || 'chairman' in parsed || 'viceChairman' in parsed){
+          approvals = parsed; // صيغة قديمة: الملف كان فيه الاعتمادات مباشرة من غير تغليف
+        }
+      }
+    } catch(e){ /* يفضل القيم الافتراضية */ }
+    return { id: f.LocalId, name: f.Name||'', type: f.Type||'', company, totalAmount: Number(f.TotalAmount)||0, remainingAmount: Number(f.RemainingAmount)||0, dueDate: f.DueDate||'', recurrence: f.Recurrence||'', notes: f.Notes||'', requestNumber: f.RequestNumber||'', paymentRequestNumber: f.PaymentRequestNumber||'', paymentRequestDate: f.PaymentRequestDate||'', requestDate: f.RequestDate||'', urgency: f.Urgency||'عادي', approvals, paymentOrderNumber, paymentOrderDate };
   }
   if (tableKey === 'inflows') return { id: f.LocalId, name: f.Name||'', source: f.Source||'', expectedAmount: Number(f.ExpectedAmount)||0, remainingAmount: Number(f.RemainingAmount)||0, expectedDate: f.ExpectedDate||'', notes: f.Notes||'', certainty: f.Certainty||'مؤكد' };
   if (tableKey === 'transactions') return { id: f.LocalId, kind: f.Kind||'', refId: f.RefId||'', refName: f.RefName||'', amount: Number(f.Amount)||0, date: f.Date||'', accountId: f.AccountId||null };
