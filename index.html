@@ -1858,11 +1858,15 @@ function renderCommitTable(){
             const prereqOk = approvalPrereqOk(approvals, r.key);
             const isAltPair = r.key==='viceChairman' || r.key==='chairman';
             const detail = (c.approvalDetails||{})[r.key];
+            const canRefresh = done && (currentUser.role==='admin' || currentUser.approvalRole===r.key) && !(detail && detail.signature);
             const sigImg = (done && detail && detail.signature) ? `<img src="${detail.signature}" style="height:22px; vertical-align:middle; margin-inline-start:6px; background:#fff; border-radius:3px; padding:1px 3px;" />` : '';
-            return `<label class="approval-step ${done?'done':''} ${!prereqOk && !done ? 'locked':''}">
-              <input type="checkbox" class="approval-check" data-id="${c.id}" data-role="${r.key}" ${done?'checked':''} ${(!prereqOk && !done)?'disabled':''} />
-              <span>${i+1}. ${r.label}${isAltPair?' (يكفي واحد منهم)':''}${sigImg}</span>
-            </label>`;
+            return `<div style="display:inline-flex; align-items:center; gap:4px;">
+              <label class="approval-step ${done?'done':''} ${!prereqOk && !done ? 'locked':''}">
+                <input type="checkbox" class="approval-check" data-id="${c.id}" data-role="${r.key}" ${done?'checked':''} ${(!prereqOk && !done)?'disabled':''} />
+                <span>${i+1}. ${r.label}${isAltPair?' (يكفي واحد منهم)':''}${sigImg}</span>
+              </label>
+              ${canRefresh ? `<button type="button" class="btn-mini refresh-signature" data-id="${c.id}" data-role="${r.key}" style="padding:2px 8px; font-size:10.5px;">🔄 حدّث توقيعي</button>` : ''}
+            </div>`;
           }).join('')}
         </div>
         <p class="panel-sub" style="margin-top:8px;">يكفي 3 توقيعات: مدير الحسابات + مدير القطاع المالي + واحد بس من (نائب رئيس مجلس الإدارة أو رئيس مجلس الإدارة). إلغاء اعتماد مدير الحسابات أو المالي بيلغي اللي بعده تلقائيًا.</p>
@@ -2465,6 +2469,24 @@ document.getElementById('commitTbody').addEventListener('click', e=>{
     document.getElementById('approvalrow-'+t.dataset.id).classList.toggle('hidden');
   } else if (t.classList.contains('print-payment-order')){
     printPaymentOrder(t.dataset.id);
+  } else if (t.classList.contains('refresh-signature')){
+    const id = t.dataset.id;
+    const role = t.dataset.role;
+    const c = state.commitments.find(x=>x.id===id);
+    if (!c) return;
+    if (!currentUser.signatureData){
+      alert('لسه معملتيش توقيع محفوظ على الجهاز ده. اضغطي "✦️ توقيعي" فوق وارسمي توقيعك الأول.');
+      return;
+    }
+    if (!c.approvalDetails) c.approvalDetails = {};
+    const prevDetail = c.approvalDetails[role] || {};
+    c.approvalDetails[role] = {
+      signature: currentUser.signatureData,
+      signedBy: currentUser.displayName || currentUser.username,
+      signedDate: prevDetail.signedDate || todayStr(),
+    };
+    persistAndRenderData('commitments');
+    showToast('✍️ تم تحديث توقيعك على الاعتماد ده', 'success');
   } else if (t.classList.contains('upload-attachment-btn')){
     const id = t.dataset.id;
     const input = document.querySelector(`.edit-attachments-input[data-id="${id}"]`);
