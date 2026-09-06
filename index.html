@@ -968,7 +968,7 @@ function fromAirtableRecord(tableKey, rec){
   if (tableKey === 'inflows') return { id: f.LocalId, name: f.Name||'', source: f.Source||'', expectedAmount: Number(f.ExpectedAmount)||0, remainingAmount: Number(f.RemainingAmount)||0, expectedDate: f.ExpectedDate||'', notes: f.Notes||'', certainty: f.Certainty||'مؤكد' };
   if (tableKey === 'transactions') return { id: f.LocalId, kind: f.Kind||'', refId: f.RefId||'', refName: f.RefName||'', amount: Number(f.Amount)||0, date: f.Date||'', accountId: f.AccountId||null };
   if (tableKey === 'accounts') return { id: f.LocalId, name: f.Name||'', type: f.Type||'', balance: Number(f.Balance)||0 };
-  if (tableKey === 'users') return { id: f.LocalId, username: f.Username||'', password: f.Password||'', displayName: f.DisplayName||'', role: f.Role||'user', approvalRole: f.ApprovalRole||'', signatureData: f.SignatureData||'' };
+  if (tableKey === 'users') return { id: f.LocalId, username: f.Username||'', password: f.Password||'', displayName: f.DisplayName||'', role: f.Role||'user', approvalRole: f.ApprovalRole||'' };
   if (tableKey === 'customTypes') return f.Name || f.LocalId || '';
   return null;
 }
@@ -1261,7 +1261,7 @@ function tryAutoLogin(){
   const savedId = localStorage.getItem('cf_currentUserId');
   if (savedId){
     const u = users.find(x=>x.id===savedId);
-    if (u) currentUser = u;
+    if (u){ currentUser = u; currentUser.signatureData = loadUserSignatureLocal(u.id); }
   }
 }
 
@@ -1378,20 +1378,11 @@ function renderSignaturePreview(){
     box.innerHTML = '<p class="panel-sub">لسه معملتش توقيع محفوظ. ارسم توقيعك تحت واضغط "حفظ التوقيع".</p>';
   }
 }
-async function saveUserSignatureToAirtable(userId, dataUrl){
-  const idxEntry = airtableRecordIndex.users && airtableRecordIndex.users.get(userId);
-  if (!idxEntry){
-    showToast('⚠️ حسابك لسه مش متزامن مع القاعدة المشتركة، جرّب تاني بعد شوية.', 'error');
-    return false;
-  }
-  try {
-    await airtableApi('PATCH', 'users', '', { records: [{ id: idxEntry.recordId, fields: { SignatureData: dataUrl||'' } }] });
-    return true;
-  } catch(e){
-    console.error(e);
-    showToast('❌ فشل حفظ التوقيع في القاعدة المشتركة (تأكد من وجود عمود SignatureData في جدول Users) — هيفضل شغال على الجهاز ده بس.', 'error');
-    return false;
-  }
+function loadUserSignatureLocal(userId){
+  try { return localStorage.getItem('cf_signature_'+userId) || ''; } catch(e){ return ''; }
+}
+function saveUserSignatureLocal(userId, dataUrl){
+  try { localStorage.setItem('cf_signature_'+userId, dataUrl||''); } catch(e){ console.error(e); }
 }
 document.getElementById('openProfileBtn').addEventListener('click', ()=>{
   document.getElementById('profilePanel').classList.remove('hidden');
@@ -1403,27 +1394,23 @@ document.getElementById('closeProfileBtn').addEventListener('click', ()=>{
   document.getElementById('profilePanel').classList.add('hidden');
 });
 document.getElementById('clearSignatureBtn').addEventListener('click', clearSignatureCanvas);
-document.getElementById('saveSignatureBtn').addEventListener('click', async ()=>{
+document.getElementById('saveSignatureBtn').addEventListener('click', ()=>{
   if (!sigHasDrawn){ alert('ارسم توقيعك الأول في اللوحة تحت.'); return; }
   const canvas = document.getElementById('signaturePad');
   const dataUrl = canvas.toDataURL('image/png');
   currentUser.signatureData = dataUrl;
-  const u = users.find(x=>x.id===currentUser.id);
-  if (u) u.signatureData = dataUrl;
-  const ok = await saveUserSignatureToAirtable(currentUser.id, dataUrl);
+  saveUserSignatureLocal(currentUser.id, dataUrl);
   renderSignaturePreview();
-  if (ok) showToast('✍️ تم حفظ توقيعك بنجاح، وهيتضاف تلقائيًا لأي اعتماد تعمله.', 'success');
+  showToast('✍️ تم حفظ توقيعك بنجاح على هذا الجهاز، وهيتضاف تلقائيًا لأي اعتماد تعمله منه.', 'success');
 });
-document.getElementById('removeSignatureBtn').addEventListener('click', async ()=>{
+document.getElementById('removeSignatureBtn').addEventListener('click', ()=>{
   if (!currentUser.signatureData){ showToast('مفيش توقيع محفوظ أصلاً.', 'info'); return; }
   if (!confirm('متأكد إنك عايز تحذف توقيعك المحفوظ؟')) return;
   currentUser.signatureData = '';
-  const u = users.find(x=>x.id===currentUser.id);
-  if (u) u.signatureData = '';
-  const ok = await saveUserSignatureToAirtable(currentUser.id, '');
+  saveUserSignatureLocal(currentUser.id, '');
   clearSignatureCanvas();
   renderSignaturePreview();
-  if (ok) showToast('🗑️ تم حذف التوقيع المحفوظ.', 'success');
+  showToast('🗑️ تم حذف التوقيع المحفوظ.', 'success');
 });
 
 async function showApp(){
@@ -3173,6 +3160,7 @@ function doLoginAttempt(){
     return;
   }
   currentUser = u;
+  currentUser.signatureData = loadUserSignatureLocal(u.id);
   localStorage.setItem('cf_currentUserId', u.id);
   document.getElementById('loginUsername').value = '';
   document.getElementById('loginPassword').value = '';
@@ -3221,7 +3209,34 @@ function renderUsersTable(){
       <td><span class="badge ${u.role==='admin'?'st-due':u.role==='accountant'?'urg-high':'st-done'}">${u.role==='admin'?'أدمن':u.role==='accountant'?'محاسب':'مستخدم عادي'}</span></td>
       <td>${roleObj ? escapeHtml(roleObj.label) : '—'}</td>
       <td class="actions">
+        <button class="btn-mini edit-toggle-user" data-id="${u.id}">تعديل</button>
         ${u.id===currentUser.id ? '<span style="font-size:11px;color:var(--muted);">(إنت دلوقتي)</span>' : `<button class="btn-mini btn-danger del-user" data-id="${u.id}">حذف</button>`}
+      </td>
+    </tr>
+    <tr class="edit-row hidden" id="editrow-user-${u.id}">
+      <td colspan="5">
+        <div class="form-grid">
+          <div class="f-field"><label>اسم المستخدم (للدخول)</label><input type="text" class="edit-user-username" data-id="${u.id}" value="${escapeAttr(u.username)}" /></div>
+          <div class="f-field"><label>كلمة المرور</label><input type="text" class="edit-user-password" data-id="${u.id}" value="${escapeAttr(u.password)}" /></div>
+          <div class="f-field"><label>الاسم المعروض</label><input type="text" class="edit-user-displayname" data-id="${u.id}" value="${escapeAttr(u.displayName)}" /></div>
+          <div class="f-field"><label>نوع الصلاحية</label>
+            <select class="edit-user-role" data-id="${u.id}">
+              <option value="user" ${u.role==='user'?'selected':''}>مستخدم عادي</option>
+              <option value="accountant" ${u.role==='accountant'?'selected':''}>محاسب (طلب دفع + تسجيل تحصيل فقط)</option>
+              <option value="admin" ${u.role==='admin'?'selected':''}>مستخدم أساسي (Admin)</option>
+            </select>
+          </div>
+          <div class="f-field"><label>دوره في سلسلة الاعتماد</label>
+            <select class="edit-user-approvalrole" data-id="${u.id}">
+              <option value="" ${!u.approvalRole?'selected':''}>بدون — لا يعتمد التزامات</option>
+              ${APPROVAL_ROLES.map(r=>`<option value="${r.key}" ${u.approvalRole===r.key?'selected':''}>${escapeHtml(r.label)}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn-primary btn-sm edit-save-user" data-id="${u.id}">حفظ التعديل</button>
+          <button class="btn-mini edit-cancel-user" data-id="${u.id}">إلغاء</button>
+        </div>
       </td>
     </tr>`;
   }).join('');
@@ -3229,7 +3244,38 @@ function renderUsersTable(){
 
 document.getElementById('usersTbody').addEventListener('click', e=>{
   const t = e.target;
-  if (t.classList.contains('del-user')){
+  if (t.classList.contains('edit-toggle-user')){
+    document.getElementById('editrow-user-'+t.dataset.id).classList.toggle('hidden');
+  } else if (t.classList.contains('edit-cancel-user')){
+    document.getElementById('editrow-user-'+t.dataset.id).classList.add('hidden');
+  } else if (t.classList.contains('edit-save-user')){
+    const id = t.dataset.id;
+    const username = document.querySelector(`.edit-user-username[data-id="${id}"]`).value.trim();
+    const password = document.querySelector(`.edit-user-password[data-id="${id}"]`).value;
+    const displayName = document.querySelector(`.edit-user-displayname[data-id="${id}"]`).value.trim();
+    const role = document.querySelector(`.edit-user-role[data-id="${id}"]`).value;
+    const approvalRole = document.querySelector(`.edit-user-approvalrole[data-id="${id}"]`).value;
+    if (!username || !password || !displayName){
+      alert('لازم تملأ اسم المستخدم وكلمة المرور والاسم المعروض.');
+      return;
+    }
+    if (users.some(u=>u.username===username && u.id!==id)){
+      alert('اسم المستخدم ده مستخدم بالفعل لحساب تاني، اختار اسم مختلف.');
+      return;
+    }
+    const u = users.find(x=>x.id===id);
+    if (!u) return;
+    Object.assign(u, { username, password, displayName, role, approvalRole });
+    if (id === currentUser.id){
+      Object.assign(currentUser, { username, password, displayName, role, approvalRole });
+      document.getElementById('currentUserName').textContent = displayName;
+      const roleObj2 = APPROVAL_ROLES.find(r=>r.key===approvalRole);
+      document.getElementById('currentUserRoleTag').textContent = role==='admin' ? 'أدمن' : role==='accountant' ? 'محاسب' : (roleObj2 ? roleObj2.label : 'مستخدم');
+    }
+    saveUsers();
+    renderUsersTable();
+    showToast(`✅ تم تحديث بيانات المستخدم "${displayName}"`, 'success');
+  } else if (t.classList.contains('del-user')){
     const id = t.dataset.id;
     if (id === currentUser.id){ alert('مينفعش تحذف نفسك وإنت مسجل دخول.'); return; }
     if (!confirm('متأكد إنك عايز تحذف المستخدم ده؟')) return;
