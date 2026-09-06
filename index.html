@@ -223,6 +223,29 @@ body.role-accountant .certainty-select
   .f-wide { grid-column:span 1; }
   .cf-header h1 { font-size:20px; }
 }
+
+#printArea { display:none; }
+.print-doc { font-family:'IBM Plex Sans Arabic', sans-serif; color:#111; direction:rtl; padding:20px; }
+.print-doc .print-logos { display:flex; gap:16px; align-items:center; margin-bottom:18px; }
+.print-doc .print-logos img { max-height:46px; }
+.print-doc h1 { font-size:19px; margin:0 0 4px; }
+.print-doc .print-sub { font-size:11.5px; color:#555; margin:0 0 18px; }
+.print-doc table { width:100%; border-collapse:collapse; font-size:12px; margin-bottom:14px; }
+.print-doc th, .print-doc td { border:1px solid #999; padding:6px 8px; text-align:right; }
+.print-doc th { background:#eee; }
+.print-fields { display:grid; grid-template-columns:1fr 1fr; gap:10px 24px; margin-bottom:18px; font-size:13px; }
+.print-fields div span.lbl { color:#555; font-size:11px; display:block; }
+.print-fields div span.val { font-weight:600; }
+.print-approvals { margin-top:20px; }
+.print-approvals table td { vertical-align:top; height:60px; }
+.print-sign-box { border:1px dashed #999; height:40px; margin-top:6px; }
+.print-footer { margin-top:30px; font-size:10.5px; color:#777; text-align:left; }
+
+@media print {
+  body * { visibility: hidden; }
+  #printArea, #printArea * { visibility: visible; }
+  #printArea { display:block !important; position:absolute; top:0; left:0; width:100%; }
+}
 </style>
 </head>
 <body>
@@ -250,6 +273,8 @@ body.role-accountant .certainty-select
 </div>
 
 <div id="toastContainer" class="toast-container"></div>
+
+<div id="printArea"></div>
 
 <div id="app" class="hidden">
 
@@ -411,6 +436,7 @@ body.role-accountant .certainty-select
         <button class="btn-primary" id="toggleAddCommit">+ إضافة التزام</button>
         <button class="btn-secondary" id="toggleImportCommit">استيراد من Excel</button>
         <button class="btn-mini btn-danger" id="clearAllCommits" style="align-self:center;">🗑️ حذف كل الالتزامات</button>
+        <button class="btn-mini" id="printCommitList" style="align-self:center;">🖨️ طباعة القائمة</button>
       </div>
     </div>
     <div class="search-row" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
@@ -691,6 +717,99 @@ function issuePaymentOrderIfReady(c){
   }
   return false;
 }
+function printLogosHtml(){
+  const imgs = document.querySelectorAll('.header-logos img');
+  if (!imgs.length) return '';
+  return `<div class="print-logos">${Array.from(imgs).map(img=>`<img src="${img.src}" alt="${img.alt}" />`).join('')}</div>`;
+}
+
+function doPrint(html){
+  const area = document.getElementById('printArea');
+  area.innerHTML = html;
+  setTimeout(()=>window.print(), 100);
+}
+
+function printCommitmentsList(){
+  const rows = getFilteredCommitments();
+  const rowsHtml = rows.map(c=>{
+    const st = commitStatus(c);
+    return `<tr>
+      <td>${escapeHtml(c.name)}</td>
+      <td>${escapeHtml(c.company||'—')}</td>
+      <td>${escapeHtml(c.type)}</td>
+      <td>${escapeHtml(c.urgency||'عادي')}</td>
+      <td>${fmtDateLabel(c.dueDate)}</td>
+      <td>${fmtMoney(c.totalAmount)}</td>
+      <td>${fmtMoney(c.remainingAmount)}</td>
+      <td>${escapeHtml(st.label)}</td>
+    </tr>`;
+  }).join('');
+  const totalRemaining = rows.reduce((s,c)=>s+c.remainingAmount,0);
+  const html = `<div class="print-doc">
+    ${printLogosHtml()}
+    <h1>قائمة الالتزامات</h1>
+    <p class="print-sub">تاريخ الطباعة: ${fmtDateLabel(todayStr())} — عدد البنود: ${rows.length} — إجمالي المتبقي: ${fmtMoney(totalRemaining)} ج.م</p>
+    <table>
+      <thead><tr><th>الاسم</th><th>الشركة</th><th>النوع</th><th>الأهمية</th><th>الاستحقاق</th><th>الإجمالي</th><th>المتبقي</th><th>الحالة</th></tr></thead>
+      <tbody>${rowsHtml || '<tr><td colspan="8">لا توجد بنود مطابقة</td></tr>'}</tbody>
+    </table>
+    <div class="print-footer">تم إنشاء هذا التقرير تلقائيًا من لوحة الخزينة.</div>
+  </div>`;
+  doPrint(html);
+}
+
+function printPaymentOrder(commitId){
+  const c = state.commitments.find(x=>x.id===commitId);
+  if (!c) return;
+  const approvals = c.approvals || emptyApprovals();
+  const per = paymentOrderPeriods(c);
+  const days = daysBetween(c.requestDate, c.dueDate);
+  const approvalRowsHtml = APPROVAL_ROLES.map((r,i)=>{
+    const done = !!approvals[r.key];
+    return `<tr>
+      <td style="width:26px; text-align:center;">${i+1}</td>
+      <td>${escapeHtml(r.label)}</td>
+      <td style="width:70px; text-align:center;">${done ? '✅ معتمد' : '⬜ لسه'}</td>
+      <td style="width:160px;">${done ? '' : '<div class="print-sign-box"></div>'}</td>
+    </tr>`;
+  }).join('');
+  const html = `<div class="print-doc">
+    ${printLogosHtml()}
+    <h1>نموذج طلب دفع / اعتماد</h1>
+    <p class="print-sub">تاريخ الطباعة: ${fmtDateLabel(todayStr())}</p>
+    <div class="print-fields">
+      <div><span class="lbl">اسم الالتزام</span><span class="val">${escapeHtml(c.name)}</span></div>
+      <div><span class="lbl">الشركة</span><span class="val">${escapeHtml(c.company||'—')}</span></div>
+      <div><span class="lbl">النوع</span><span class="val">${escapeHtml(c.type)}</span></div>
+      <div><span class="lbl">مدى الأهمية</span><span class="val">${escapeHtml(c.urgency||'عادي')}</span></div>
+      <div><span class="lbl">رقم طلب الالتزام</span><span class="val">${escapeHtml(c.requestNumber||'—')}</span></div>
+      <div><span class="lbl">رقم طلب الدفع</span><span class="val">${escapeHtml(c.paymentRequestNumber||'—')}</span></div>
+      <div><span class="lbl">تاريخ تقديم الطلب</span><span class="val">${c.requestDate?fmtDateLabel(c.requestDate):'—'}</span></div>
+      <div><span class="lbl">تاريخ تقديم طلب الدفع</span><span class="val">${c.paymentRequestDate?fmtDateLabel(c.paymentRequestDate):'—'}</span></div>
+      <div><span class="lbl">تاريخ الاستحقاق</span><span class="val">${fmtDateLabel(c.dueDate)}</span></div>
+      <div><span class="lbl">عدد الأيام (الطلب للاستحقاق)</span><span class="val">${days!=null?days+' يوم':'—'}</span></div>
+      <div><span class="lbl">القيمة الإجمالية</span><span class="val">${fmtMoney(c.totalAmount)} ج.م</span></div>
+      <div><span class="lbl">المبلغ المتبقي</span><span class="val">${fmtMoney(c.remainingAmount)} ج.م</span></div>
+    </div>
+    <div class="print-approvals">
+      <h2 style="font-size:14px; margin-bottom:8px;">سلسلة الاعتماد (يكفي 3 من 4)</h2>
+      <table>
+        <thead><tr><th>#</th><th>الجهة</th><th>الحالة</th><th>التوقيع</th></tr></thead>
+        <tbody>${approvalRowsHtml}</tbody>
+      </table>
+    </div>
+    ${c.paymentOrderNumber ? `
+      <div class="print-fields" style="margin-top:10px;">
+        <div><span class="lbl">رقم أمر الدفع</span><span class="val">${escapeHtml(c.paymentOrderNumber)}</span></div>
+        <div><span class="lbl">تاريخ إصدار أمر الدفع</span><span class="val">${fmtDateLabel(c.paymentOrderDate)}</span></div>
+        <div><span class="lbl">المدة من الطلب للاعتماد</span><span class="val">${per&&per.daysRequestToOrder!=null?per.daysRequestToOrder+' يوم':'—'}</span></div>
+        <div><span class="lbl">المدة من الاعتماد لحد النهاردة</span><span class="val">${per&&per.daysSinceOrder!=null?per.daysSinceOrder+' يوم':'—'}</span></div>
+      </div>` : '<p class="print-sub">⚠️ لسه ماصدرش أمر دفع لهذا الالتزام (الاعتماد لسه مش مكتمل).</p>'}
+    <div class="print-footer">تم إنشاء هذا المستند تلقائيًا من لوحة الخزينة — ${c.company||''}</div>
+  </div>`;
+  doPrint(html);
+}
+
 function paymentOrderPeriods(c){
   if (!c.paymentOrderDate) return null;
   const fromDate = c.paymentRequestDate || c.requestDate || null;
@@ -1430,19 +1549,13 @@ function optionsHtml(list, current){ return list.map(o=>`<option value="${escape
 
 const PAGE_SIZE = 50;
 
-function renderCommitTable(){
-  const tbody = document.getElementById('commitTbody');
+function getFilteredCommitments(){
   let allRows = state.commitments.slice().sort((a,b)=>a.dueDate<b.dueDate?-1:1);
   if (state.commitSearch.trim()){
     const q = state.commitSearch.trim().toLowerCase();
     allRows = allRows.filter(c=>c.name.toLowerCase().includes(q));
   }
   const today = todayStr();
-  const filterLabels = {
-    unpaid: 'الالتزامات غير المسددة', all: 'كل الالتزامات', urgent: 'الطلبات العاجلة',
-    deferred: 'الطلبات المؤجلة', late: 'الطلبات المتأخرة', dailyApproved: 'المعتمد للصرف اليوم',
-    paid: 'الالتزامات المسددة بالكامل',
-  };
   if (state.commitCategoryFilter){
     const f = state.commitCategoryFilter;
     if (f==='unpaid') allRows = allRows.filter(c=>c.remainingAmount>0);
@@ -1452,6 +1565,26 @@ function renderCommitTable(){
     else if (f==='dailyApproved') allRows = allRows.filter(c=>c.remainingAmount>0 && c.dueDate===today && isFullyApproved(c.approvals));
     else if (f==='paid') allRows = allRows.filter(c=>c.remainingAmount<=0);
   }
+  const af = state.commitAdvFilters;
+  if (af.company) allRows = allRows.filter(c=>c.company===af.company);
+  if (af.type) allRows = allRows.filter(c=>c.type===af.type);
+  if (af.urgency) allRows = allRows.filter(c=>(c.urgency||'عادي')===af.urgency);
+  if (af.status) allRows = allRows.filter(c=>commitStatusCategory(c)===af.status);
+  if (af.dueFrom) allRows = allRows.filter(c=>c.dueDate>=af.dueFrom);
+  if (af.dueTo) allRows = allRows.filter(c=>c.dueDate<=af.dueTo);
+  if (af.minRem!=='' && af.minRem!=null) allRows = allRows.filter(c=>c.remainingAmount>=parseFloat(af.minRem));
+  if (af.maxRem!=='' && af.maxRem!=null) allRows = allRows.filter(c=>c.remainingAmount<=parseFloat(af.maxRem));
+  return allRows;
+}
+
+function renderCommitTable(){
+  const tbody = document.getElementById('commitTbody');
+  let allRows = getFilteredCommitments();
+  const filterLabels = {
+    unpaid: 'الالتزامات غير المسددة', all: 'كل الالتزامات', urgent: 'الطلبات العاجلة',
+    deferred: 'الطلبات المؤجلة', late: 'الطلبات المتأخرة', dailyApproved: 'المعتمد للصرف اليوم',
+    paid: 'الالتزامات المسددة بالكامل',
+  };
   const banner = document.getElementById('commitFilterBanner');
   if (state.commitCategoryFilter){
     banner.classList.remove('hidden');
@@ -1461,14 +1594,6 @@ function renderCommitTable(){
   }
   const af = state.commitAdvFilters;
   const advActive = !!(af.company||af.type||af.urgency||af.status||af.dueFrom||af.dueTo||af.minRem||af.maxRem);
-  if (af.company) allRows = allRows.filter(c=>c.company===af.company);
-  if (af.type) allRows = allRows.filter(c=>c.type===af.type);
-  if (af.urgency) allRows = allRows.filter(c=>(c.urgency||'عادي')===af.urgency);
-  if (af.status) allRows = allRows.filter(c=>commitStatusCategory(c)===af.status);
-  if (af.dueFrom) allRows = allRows.filter(c=>c.dueDate>=af.dueFrom);
-  if (af.dueTo) allRows = allRows.filter(c=>c.dueDate<=af.dueTo);
-  if (af.minRem!=='' && af.minRem!=null) allRows = allRows.filter(c=>c.remainingAmount>=parseFloat(af.minRem));
-  if (af.maxRem!=='' && af.maxRem!=null) allRows = allRows.filter(c=>c.remainingAmount<=parseFloat(af.maxRem));
   document.getElementById('toggleCommitFilters').classList.toggle('btn-primary', advActive);
   if (!allRows.length){
     tbody.innerHTML = `<tr><td colspan="13" class="empty">${state.commitSearch.trim() || state.commitCategoryFilter || advActive ? 'مفيش نتائج مطابقة' : 'لا توجد التزامات مسجّلة بعد'}</td></tr>`;
@@ -1547,6 +1672,7 @@ function renderCommitTable(){
             </div>
           </div>`;
         })()}
+        <button class="btn-mini print-payment-order" data-id="${c.id}" style="margin-top:10px;">🖨️ طباعة طلب الدفع / الاعتماد</button>
       </td>
     </tr>
     <tr class="edit-row hidden" id="editrow-commit-${c.id}">
@@ -2121,6 +2247,8 @@ document.getElementById('commitTbody').addEventListener('click', e=>{
     persistAndRenderData('commitments');
   } else if (t.classList.contains('approval-toggle')){
     document.getElementById('approvalrow-'+t.dataset.id).classList.toggle('hidden');
+  } else if (t.classList.contains('print-payment-order')){
+    printPaymentOrder(t.dataset.id);
   }
 });
 document.getElementById('commitTbody').addEventListener('change', e=>{
@@ -2306,6 +2434,7 @@ document.getElementById('clearAllCommits').addEventListener('click', ()=>{
   state.selectedCommitIds.clear();
   persistAndRenderData('commitments');
 });
+document.getElementById('printCommitList').addEventListener('click', printCommitmentsList);
 
 document.getElementById('pagerCommit').addEventListener('click', e=>{
   const t = e.target;
