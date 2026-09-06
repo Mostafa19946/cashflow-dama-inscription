@@ -852,8 +852,11 @@ async function loadFromAirtable(tableKey){
     const records = await airtableListAll(tableKey);
     const idx = new Map();
     const items = records.map(rec=>{
-      idx.set(rec.fields.LocalId, rec.id);
-      return fromAirtableRecord(tableKey, rec);
+      const item = fromAirtableRecord(tableKey, rec);
+      const localId = tableKey==='customTypes' ? item : item.id;
+      const normalizedFields = toAirtableRecord(tableKey, item);
+      idx.set(localId, { recordId: rec.id, fieldsJSON: JSON.stringify(normalizedFields) });
+      return item;
     }).filter(it=>it!=null && (typeof it!=='object' || it.id));
     airtableRecordIndex[tableKey] = idx;
     return items;
@@ -891,21 +894,37 @@ async function doSyncTable(tableKey, items){
   items.forEach(it=>{
     const localId = tableKey==='customTypes' ? it : it.id;
     const fields = toAirtableRecord(tableKey, it);
-    if (index.has(localId)) toUpdate.push({ id: index.get(localId), fields });
-    else toCreate.push(fields);
+    const fieldsJSON = JSON.stringify(fields);
+    const existing = index.get(localId);
+    if (existing){
+      if (existing.fieldsJSON !== fieldsJSON){
+        toUpdate.push({ id: existing.recordId, fields, __localId: localId, __fieldsJSON: fieldsJSON });
+      }
+      // لو نفس البيانات بالظبط، متتبعتش أي طلب تحديث ليها خالص
+    } else {
+      toCreate.push({ fields, __localId: localId, __fieldsJSON: fieldsJSON });
+    }
   });
   const toDeleteIds = [];
-  index.forEach((recId, localId)=>{ if (!currentIds.has(localId)) toDeleteIds.push(recId); });
+  index.forEach((entry, localId)=>{ if (!currentIds.has(localId)) toDeleteIds.push(entry.recordId); });
+
   if (toCreate.length){
-    const created = await airtableBatchCreate(tableKey, toCreate);
-    created.forEach(rec=>{ index.set(rec.fields.LocalId, rec.id); });
+    const created = await airtableBatchCreate(tableKey, toCreate.map(c=>c.fields));
+    created.forEach((rec, i)=>{
+      index.set(toCreate[i].__localId, { recordId: rec.id, fieldsJSON: toCreate[i].__fieldsJSON });
+    });
   }
-  if (toUpdate.length) await airtableBatchUpdate(tableKey, toUpdate);
+  if (toUpdate.length){
+    await airtableBatchUpdate(tableKey, toUpdate.map(u=>({ id: u.id, fields: u.fields })));
+    toUpdate.forEach(u=>{
+      index.set(u.__localId, { recordId: u.id, fieldsJSON: u.__fieldsJSON });
+    });
+  }
   if (toDeleteIds.length){
     await airtableBatchDelete(tableKey, toDeleteIds);
     const idsToRemove = new Set(toDeleteIds);
-    for (const [localId, recId] of Array.from(index.entries())){
-      if (idsToRemove.has(recId)) index.delete(localId);
+    for (const [localId, entry] of Array.from(index.entries())){
+      if (idsToRemove.has(entry.recordId)) index.delete(localId);
     }
   }
   airtableRecordIndex[tableKey] = index;
@@ -991,8 +1010,43 @@ let pollTimer = null;
 function isUserMidEdit(){
   return !!document.querySelector('.add-form:not(.hidden), .edit-row:not(.hidden), .pay-row:not(.hidden), .approval-row:not(.hidden)');
 }
+let recentLocalActionIds = new Set();
+function markLocalAction(id){
+  if (!id) return;
+  recentLocalActionIds.add(id);
+  setTimeout(()=>recentLocalActionIds.delete(id), 25000);
+}
+
+function notifyRemoteChanges(oldCommitments, newCommitments, oldTransactions, newTransactions){
+  const oldCommitIds = new Set(oldCommitments.map(c=>c.id));
+  const oldCommitMap = new Map(oldCommitments.map(c=>[c.id,c]));
+  newCommitments.forEach(c=>{
+    if (recentLocalActionIds.has(c.id)) return;
+    if (!oldCommitIds.has(c.id)){
+      showToast(`📥 طلب التزام جديد: ${c.name} — ${fmtMoney(c.totalAmount)} ج.م${c.company?` (${c.company})`:''}`, 'info');
+      return;
+    }
+    const old = oldCommitMap.get(c.id);
+    if (!old) return;
+    const oldCount = approvalProgressCount(old.approvals);
+    const newCount = approvalProgressCount(c.approvals);
+    if (newCount > oldCount) showToast(`✅ اعتماد جديد على: ${c.name} (${newCount}/3)`, 'info');
+    if (!old.paymentOrderNumber && c.paymentOrderNumber) showToast(`📄 صدر أمر دفع رقم ${c.paymentOrderNumber} لـ: ${c.name}`, 'success');
+  });
+  const oldTxnIds = new Set(oldTransactions.map(t=>t.id));
+  newTransactions.forEach(t=>{
+    if (recentLocalActionIds.has(t.id)) return;
+    if (!oldTxnIds.has(t.id)){
+      const verb = t.kind==='تحصيل' ? '💰 تحصيل جديد' : '💸 سداد جديد';
+      showToast(`${verb}: ${t.refName} — ${fmtMoney(t.amount)} ج.م`, 'info');
+    }
+  });
+}
+
 async function hydrateAllFromAirtable(silent){
   if (!silent) setSyncStatus('syncing');
+  const prevCommitments = state.commitments;
+  const prevTransactions = state.transactions;
   const [rc, ri, rt, ra, rct] = await Promise.all([
     loadFromAirtable('commitments'),
     loadFromAirtable('inflows'),
@@ -1007,6 +1061,7 @@ async function hydrateAllFromAirtable(silent){
   if (rt && !syncInFlight.transactions){ state.transactions = rt; cacheLocal('transactions', rt); } else if (!rt) anyFail = true;
   if (ra && !syncInFlight.accounts){ accounts = ra; cacheLocal('accounts', ra); } else if (!ra) anyFail = true;
   if (rct && !syncInFlight.customTypes){ customTypes = rct; cacheLocal('customTypes', rct); } else if (!rct) anyFail = true;
+  if (silent && rc && rt) notifyRemoteChanges(prevCommitments, state.commitments, prevTransactions, state.transactions);
   renderCTypeSelect();
   renderAccountsTable();
   renderAll();
@@ -1020,7 +1075,7 @@ function startPolling(){
     if (!currentUser) return;
     if (isUserMidEdit()) return;
     hydrateAllFromAirtable(true);
-  }, 15000);
+  }, 10000);
 }
 
 async function showApp(){
@@ -1903,8 +1958,9 @@ document.getElementById('saveCommit').addEventListener('click', ()=>{
     if (!newType){ alert('اكتب اسم النوع الجديد.'); return; }
     type = newType;
   }
+  const newCommitId = uid();
   state.commitments.push({
-    id: uid(), name, type, company: document.getElementById('cCompany').value, totalAmount: amount,
+    id: newCommitId, name, type, company: document.getElementById('cCompany').value, totalAmount: amount,
     remainingAmount: amount, dueDate, recurrence: document.getElementById('cRecurrence').value,
     notes: document.getElementById('cNotes').value.trim(),
     requestNumber: document.getElementById('cRequestNumber').value.trim(),
@@ -1914,6 +1970,7 @@ document.getElementById('saveCommit').addEventListener('click', ()=>{
     urgency: document.getElementById('cUrgency').value,
     approvals: emptyApprovals(),
   });
+  markLocalAction(newCommitId);
   ['cName','cAmount','cNotes','cRequestNumber','cPaymentRequestNumber','cPaymentRequestDate','cRequestDate','cNewType'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('cNewType').classList.add('hidden');
   renderCTypeSelect();
@@ -1930,11 +1987,13 @@ document.getElementById('saveInflow').addEventListener('click', ()=>{
   const amount = parseFloat(document.getElementById('fAmount').value);
   const expectedDate = document.getElementById('fDate').value || todayStr();
   if (!name || !amount || amount<=0) return;
+  const newInflowId = uid();
   state.inflows.push({
-    id: uid(), name, source: document.getElementById('fSource').value.trim(), expectedAmount: amount,
+    id: newInflowId, name, source: document.getElementById('fSource').value.trim(), expectedAmount: amount,
     remainingAmount: amount, expectedDate, notes: document.getElementById('fNotes').value.trim(),
     certainty: document.getElementById('fCertainty').value,
   });
+  markLocalAction(newInflowId);
   ['fName','fSource','fAmount','fNotes'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('addInflowForm').classList.add('hidden');
   persistAndRenderData('inflows');
@@ -2010,7 +2069,9 @@ document.getElementById('commitTbody').addEventListener('click', e=>{
     const c = state.commitments.find(c=>c.id===id);
     if (!c) return;
     c.remainingAmount = Math.max(0, +(c.remainingAmount-amount).toFixed(2));
-    state.transactions.push({ id: uid(), kind:'سداد', refId:id, refName:c.name, amount, date, accountId });
+    const txnId = uid();
+    state.transactions.push({ id: txnId, kind:'سداد', refId:id, refName:c.name, amount, date, accountId });
+    markLocalAction(txnId); markLocalAction(id);
     persistAndRenderData('commitments', 'transactions');
   } else if (t.classList.contains('edit-toggle-commit')){
     document.getElementById('editrow-commit-'+t.dataset.id).classList.toggle('hidden');
@@ -2071,6 +2132,7 @@ document.getElementById('commitTbody').addEventListener('change', e=>{
       cascadeResetChildren(c.approvals, role);
     }
     const justIssued = issuePaymentOrderIfReady(c);
+    markLocalAction(id);
     persistAndRenderData('commitments');
     document.getElementById('approvalrow-'+id).classList.remove('hidden');
     if (justIssued) alert(`تم اعتماد الالتزام بالكامل ✅\nاتصدر أمر دفع رقم: ${c.paymentOrderNumber}`);
@@ -2146,7 +2208,9 @@ document.getElementById('inflowTbody').addEventListener('click', e=>{
     const f = state.inflows.find(f=>f.id===id);
     if (!f) return;
     f.remainingAmount = Math.max(0, +(f.remainingAmount-amount).toFixed(2));
-    state.transactions.push({ id: uid(), kind:'تحصيل', refId:id, refName:f.name, amount, date, accountId });
+    const txnId2 = uid();
+    state.transactions.push({ id: txnId2, kind:'تحصيل', refId:id, refName:f.name, amount, date, accountId });
+    markLocalAction(txnId2); markLocalAction(id);
     persistAndRenderData('inflows', 'transactions');
   } else if (t.classList.contains('edit-toggle-inflow')){
     document.getElementById('editrow-inflow-'+t.dataset.id).classList.toggle('hidden');
@@ -2642,13 +2706,15 @@ function renderImportPreviewCommit(rows){
   document.getElementById('confirmImportBtnCommit').addEventListener('click', ()=>{
     const valid = pendingImportCommitRows.filter(r=>r.valid);
     valid.forEach(r=>{
+      const newId = uid();
       state.commitments.push({
-        id: uid(), name: r.name, type: r.type, company: r.company||COMPANIES[0], totalAmount: r.amount,
+        id: newId, name: r.name, type: r.type, company: r.company||COMPANIES[0], totalAmount: r.amount,
         remainingAmount: r.amount, dueDate: r.date, recurrence: r.recurrence,
         notes: r.notes,
         requestNumber: '', paymentRequestNumber: '', requestDate: '', urgency: 'عادي', approvals: emptyApprovals(),
         paymentOrderNumber: '', paymentOrderDate: '',
       });
+      markLocalAction(newId);
     });
     document.getElementById('excelFileInputCommit').value = '';
     el.classList.add('hidden');
