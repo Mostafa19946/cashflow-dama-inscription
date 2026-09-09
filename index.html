@@ -517,7 +517,7 @@ body.role-accountant .certainty-select
 
     <div class="add-form hidden" id="importCommitPanel">
       <p class="panel-sub" style="margin-bottom:12px;">
-        ارفع ملف Excel أو CSV فيه أعمدة: <b>الاسم</b>، النوع (اختياري)، <b>القيمة</b>، <b>تاريخ الاستحقاق</b>، التكرار (اختياري)، ملاحظات (اختياري). النظام بيتعرف على الأعمدة تلقائيًا حتى لو ترتيبها مختلف.
+        ارفع ملف Excel أو CSV فيه أعمدة: <b>الاسم</b>، النوع (اختياري)، الشركة (اختياري)، <b>القيمة</b>، <b>تاريخ الاستحقاق</b>، تاريخ تقديم الطلب (اختياري)، التكرار (اختياري)، ملاحظات (اختياري). النظام بيتعرف على الأعمدة تلقائيًا حتى لو ترتيبها مختلف.
       </p>
       <div class="import-row">
         <button class="btn-mini" id="downloadTemplateBtnCommit">تحميل نموذج Excel فارغ</button>
@@ -736,7 +736,7 @@ function nextPaymentRequestNumber(){ return nextSeqNumber('PAY', 'paymentRequest
 function nextPaymentOrderNumber(){ return nextSeqNumber('ORD', 'paymentOrderNumber'); }
 
 function issuePaymentOrderIfReady(c){
-  if (isFullyApproved(c.approvals) && !c.paymentOrderNumber){
+  if (isFullyApproved(c.approvals, c.totalAmount) && !c.paymentOrderNumber){
     c.paymentOrderNumber = nextPaymentOrderNumber();
     c.paymentOrderDate = todayStr();
     return true;
@@ -874,15 +874,21 @@ function approvalPrereqOk(approvals, role){
 function cascadeResetChildren(approvals, role){
   (APPROVAL_CASCADE_CHILDREN[role]||[]).forEach(k=>approvals[k]=false);
 }
-function isFullyApproved(approvals){
+const SIMPLIFIED_APPROVAL_THRESHOLD = 20000;
+function isFullyApproved(approvals, amount){
   approvals = approvals || {};
-  return !!approvals.accountsManager && !!approvals.financialManager && !!(approvals.viceChairman || approvals.chairman);
+  const baseOk = !!approvals.accountsManager && !!approvals.financialManager;
+  if (!baseOk) return false;
+  if (amount!=null && amount < SIMPLIFIED_APPROVAL_THRESHOLD) return true;
+  return !!(approvals.viceChairman || approvals.chairman);
 }
-function approvalProgressCount(approvals){
+function approvalProgressCount(approvals, amount){
   approvals = approvals || {};
   let n = 0;
   if (approvals.accountsManager) n++;
   if (approvals.financialManager) n++;
+  const needsThird = !(amount!=null && amount < SIMPLIFIED_APPROVAL_THRESHOLD);
+  if (!needsThird) return n>0 ? Math.min(n,2) : n;
   if (approvals.viceChairman || approvals.chairman) n++;
   return n;
 }
@@ -1287,8 +1293,8 @@ function notifyRemoteChanges(oldCommitments, newCommitments, oldTransactions, ne
     }
     const old = oldCommitMap.get(c.id);
     if (!old) return;
-    const oldCount = approvalProgressCount(old.approvals);
-    const newCount = approvalProgressCount(c.approvals);
+    const oldCount = approvalProgressCount(old.approvals, old.totalAmount);
+    const newCount = approvalProgressCount(c.approvals, c.totalAmount);
     if (newCount > oldCount) showToast(`✅ اعتماد جديد على: ${c.name} (${newCount}/3)`, 'info');
     if (!old.paymentOrderNumber && c.paymentOrderNumber) showToast(`📄 صدر أمر دفع رقم ${c.paymentOrderNumber} لـ: ${c.name}`, 'success');
   });
@@ -1456,7 +1462,8 @@ function isConfirmedInflow(f){ return (f.certainty||'مؤكد')==='مؤكد'; }
 function totals(){
   const totalRemainingCommit = state.commitments.reduce((s,c)=>s+Math.max(0,c.remainingAmount),0);
   const totalRemainingInflow = state.inflows.reduce((s,f)=>s+(f.remainingAmount>0 && isSaneDate(f.expectedDate) && isConfirmedInflow(f) ? f.remainingAmount : 0),0);
-  const totalPaid = state.transactions.filter(t=>t.kind==='سداد').reduce((s,t)=>s+t.amount,0);
+  // السدادات اللي متسجّلاش من حساب بنك/خزينة (خارج البنوك والخزائن) بتتخصم من الالتزام بس مبتأثرش على الرصيد المتاح
+  const totalPaid = state.transactions.filter(t=>t.kind==='سداد' && t.accountId).reduce((s,t)=>s+t.amount,0);
   const totalCollected = state.transactions.filter(t=>t.kind==='تحصيل').reduce((s,t)=>s+t.amount,0);
   const cashBalance = totalOpeningBalance() + totalCollected - totalPaid;
   return { totalRemainingCommit, totalRemainingInflow, cashBalance };
@@ -1588,7 +1595,7 @@ function renderStats(){
   document.getElementById('statLateCommitCard').classList.toggle('stat-alert', lateCommitList.length>0);
 
   const dailyApprovedSum = unpaid
-    .filter(c=>c.dueDate===today && isFullyApproved(c.approvals))
+    .filter(c=>c.dueDate===today && isFullyApproved(c.approvals, c.totalAmount))
     .reduce((s,c)=>s+c.remainingAmount,0);
   document.getElementById('statDailyApproved').textContent = fmtMoney(dailyApprovedSum);
 
@@ -1765,7 +1772,7 @@ function getFilteredCommitments(){
     else if (f==='urgent') allRows = allRows.filter(c=>c.remainingAmount>0 && (c.urgency||'عادي')==='عاجل');
     else if (f==='deferred') allRows = allRows.filter(c=>c.remainingAmount>0 && (c.urgency||'عادي')==='مؤجل');
     else if (f==='late') allRows = allRows.filter(c=>isLateCommitment(c));
-    else if (f==='dailyApproved') allRows = allRows.filter(c=>c.remainingAmount>0 && c.dueDate===today && isFullyApproved(c.approvals));
+    else if (f==='dailyApproved') allRows = allRows.filter(c=>c.remainingAmount>0 && c.dueDate===today && isFullyApproved(c.approvals, c.totalAmount));
     else if (f==='paid') allRows = allRows.filter(c=>c.remainingAmount<=0);
   }
   const af = state.commitAdvFilters;
@@ -1814,8 +1821,8 @@ function renderCommitTable(){
     const checked = state.selectedCommitIds.has(c.id) ? 'checked' : '';
     const urgency = c.urgency || 'عادي';
     const approvals = c.approvals || emptyApprovals();
-    const approvedCount = approvalProgressCount(approvals);
-    const fullyApproved = isFullyApproved(approvals);
+    const approvedCount = approvalProgressCount(approvals, c.totalAmount);
+    const fullyApproved = isFullyApproved(approvals, c.totalAmount);
     const days = daysBetween(c.requestDate, c.dueDate);
     return `<tr>
       <td><input type="checkbox" class="commit-checkbox" data-id="${c.id}" ${checked} /></td>
@@ -1828,7 +1835,7 @@ function renderCommitTable(){
       <td class="num">${days!=null ? days+' يوم' : '—'}</td>
       <td class="num">${fmtMoney(c.totalAmount)}</td>
       <td class="num neg">${fmtMoney(c.remainingAmount)}</td>
-      <td><button class="btn-mini approval-toggle" data-id="${c.id}">${approvedCount}/3 ${fullyApproved?'✅':''}${c.paymentOrderNumber?` 📄${c.paymentOrderNumber}`:''}</button></td>
+      <td><button class="btn-mini approval-toggle" data-id="${c.id}">${approvedCount}/${c.totalAmount<SIMPLIFIED_APPROVAL_THRESHOLD?2:3} ${fullyApproved?'✅':''}${c.paymentOrderNumber?` 📄${c.paymentOrderNumber}`:''}</button></td>
       <td><span class="badge ${st.cls}">${st.label}</span></td>
       <td class="actions">
         ${c.remainingAmount>0 ? `<button class="btn-mini pay-toggle" data-id="${c.id}">تسجيل سداد</button>` : ''}
@@ -1869,7 +1876,7 @@ function renderCommitTable(){
             </div>`;
           }).join('')}
         </div>
-        <p class="panel-sub" style="margin-top:8px;">يكفي 3 توقيعات: مدير الحسابات + مدير القطاع المالي + واحد بس من (نائب رئيس مجلس الإدارة أو رئيس مجلس الإدارة). إلغاء اعتماد مدير الحسابات أو المالي بيلغي اللي بعده تلقائيًا.</p>
+        <p class="panel-sub" style="margin-top:8px;">${c.totalAmount<SIMPLIFIED_APPROVAL_THRESHOLD ? `💡 المبلغ أقل من ${fmtMoney(SIMPLIFIED_APPROVAL_THRESHOLD)} ج.م، فيكفي اعتماد مدير الحسابات + مدير القطاع المالي بس (من غير محتاج نائب رئيس/رئيس مجلس الإدارة).` : 'يكفي 3 توقيعات: مدير الحسابات + مدير القطاع المالي + واحد بس من (نائب رئيس مجلس الإدارة أو رئيس مجلس الإدارة).'} إلغاء اعتماد مدير الحسابات أو المالي بيلغي اللي بعده تلقائيًا.</p>
         ${(()=>{
           if (!c.paymentOrderNumber) return '';
           const per = paymentOrderPeriods(c);
@@ -2153,8 +2160,13 @@ function renderBulkBar(kind){
 }
 
 function populateAccountSelects(){
-  const optsHtml = '<option value="">— بدون تحديد —</option>' + accounts.map(a=>`<option value="${escapeAttr(a.id)}">${accountIcon(a.type)} ${escapeHtml(a.name)}</option>`).join('');
-  document.querySelectorAll('.account-select').forEach(sel=>{ sel.innerHTML = optsHtml; });
+  const accOptions = accounts.map(a=>`<option value="${escapeAttr(a.id)}">${accountIcon(a.type)} ${escapeHtml(a.name)}</option>`).join('');
+  document.querySelectorAll('.pay-account').forEach(sel=>{
+    sel.innerHTML = '<option value="">🚫 خارج البنوك والخزائن (بدون تأثير على الرصيد المتاح)</option>' + accOptions;
+  });
+  document.querySelectorAll('.collect-account').forEach(sel=>{
+    sel.innerHTML = '<option value="">— بدون تحديد —</option>' + accOptions;
+  });
 }
 
 function renderAll(){
@@ -2832,6 +2844,15 @@ function findCol(headers, keys){
   }
   return -1;
 }
+function findColExcluding(headers, keys, excludeIdx){
+  for (let i=0;i<headers.length;i++){
+    if (i===excludeIdx) continue;
+    const h = String(headers[i]||'').trim().toLowerCase();
+    if (!h) continue;
+    if (keys.some(k=>h.includes(k))) return i;
+  }
+  return -1;
+}
 
 function excelSerialToDate(v){
   const epoch = new Date(Date.UTC(1899,11,30));
@@ -3026,6 +3047,9 @@ function matchFromList(raw, list, fallback){
   return found || fallback;
 }
 
+const REQUEST_DATE_IMPORT_KEYS = ['تاريخ تقديم','تاريخ الطلب','request date','submission date'];
+const DUE_DATE_SPECIFIC_KEYS = ['تاريخ الاستحقاق','استحقاق','due date'];
+
 function parseCommitRows(rows){
   if (!rows.length) return [];
   const headers = rows[0];
@@ -3033,7 +3057,9 @@ function parseCommitRows(rows){
   const typeIdx = findCol(headers, TYPE_KEYS);
   const companyIdx = findCol(headers, ['شركة','company']);
   const amountIdx = findCol(headers, AMOUNT_KEYS);
-  const dateIdx = findCol(headers, DATE_KEYS);
+  const requestDateIdx = findCol(headers, REQUEST_DATE_IMPORT_KEYS);
+  let dateIdx = findColExcluding(headers, DUE_DATE_SPECIFIC_KEYS, requestDateIdx);
+  if (dateIdx < 0) dateIdx = findColExcluding(headers, DATE_KEYS, requestDateIdx);
   const recurIdx = findCol(headers, RECURRENCE_KEYS);
   const notesIdx = findCol(headers, NOTES_KEYS);
 
@@ -3046,12 +3072,14 @@ function parseCommitRows(rows){
     const companyRaw = companyIdx>=0 ? row[companyIdx] : '';
     const amountRaw = amountIdx>=0 ? row[amountIdx] : row[2];
     const dateRaw = dateIdx>=0 ? row[dateIdx] : row[3];
+    const requestDateRaw = requestDateIdx>=0 ? row[requestDateIdx] : '';
     const recurRaw = recurIdx>=0 ? row[recurIdx] : '';
     const notesRaw = notesIdx>=0 ? row[notesIdx] : '';
 
     const name = String(nameRaw||'').trim();
     const amount = toAmountVal(amountRaw);
     const date = toISODate(dateRaw);
+    const requestDate = requestDateRaw ? (toISODate(requestDateRaw) || '') : '';
     const type = matchFromList(typeRaw, allCommitTypes(), 'أخرى');
     const company = matchFromList(companyRaw, COMPANIES, COMPANIES[0]);
     const recurrence = matchFromList(recurRaw, ['مرة واحدة','شهري','ربع سنوي','سنوي'], 'مرة واحدة');
@@ -3062,7 +3090,7 @@ function parseCommitRows(rows){
     if (!date) errors.push('التاريخ غير صحيح');
 
     out.push({
-      name, type, company, amount, date, recurrence,
+      name, type, company, amount, date, requestDate, recurrence,
       notes: String(notesRaw||'').trim(),
       valid: errors.length===0, errors,
     });
@@ -3083,6 +3111,7 @@ function renderImportPreviewCommit(rows){
       <td>${escapeHtml(r.name)||'—'}</td>
       <td>${escapeHtml(r.type)||'—'}</td>
       <td class="num">${r.amount!=null?fmtMoney(r.amount):'—'}</td>
+      <td>${r.requestDate?fmtDateLabel(r.requestDate):'—'}</td>
       <td>${r.date?fmtDateLabel(r.date):'—'}</td>
       <td>${r.valid?'<span class="badge st-done">صالح</span>':'<span class="badge st-late">'+escapeHtml(r.errors.join('، '))+'</span>'}</td>
     </tr>`).join('');
@@ -3094,8 +3123,8 @@ function renderImportPreviewCommit(rows){
     </div>
     <div class="import-table-wrap">
       <table>
-        <thead><tr><th>الاسم</th><th>النوع</th><th>القيمة</th><th>الاستحقاق</th><th>الحالة</th></tr></thead>
-        <tbody>${rowsHtml || '<tr><td colspan="5" class="empty">لا توجد صفوف بيانات في الملف</td></tr>'}</tbody>
+        <thead><tr><th>الاسم</th><th>النوع</th><th>القيمة</th><th>تاريخ تقديم الطلب</th><th>الاستحقاق</th><th>الحالة</th></tr></thead>
+        <tbody>${rowsHtml || '<tr><td colspan="6" class="empty">لا توجد صفوف بيانات في الملف</td></tr>'}</tbody>
       </table>
     </div>
     <div class="btn-row">
@@ -3111,7 +3140,7 @@ function renderImportPreviewCommit(rows){
         id: newId, name: r.name, type: r.type, company: r.company||COMPANIES[0], totalAmount: r.amount,
         remainingAmount: r.amount, dueDate: r.date, recurrence: r.recurrence,
         notes: r.notes,
-        requestNumber: '', paymentRequestNumber: '', requestDate: '', urgency: 'عادي', approvals: emptyApprovals(),
+        requestNumber: '', paymentRequestNumber: '', requestDate: r.requestDate||'', urgency: 'عادي', approvals: emptyApprovals(),
         paymentOrderNumber: '', paymentOrderDate: '',
       });
       markLocalAction(newId);
@@ -3139,8 +3168,8 @@ document.getElementById('toggleAddCommit').addEventListener('click', ()=>{
 
 document.getElementById('downloadTemplateBtnCommit').addEventListener('click', ()=>{
   const wsData = [
-    ['الاسم','النوع','القيمة','تاريخ الاستحقاق','التكرار','ملاحظات'],
-    ['مورد الخامات - شركة النور','مورد',25000,'2026-09-20','شهري',''],
+    ['الاسم','النوع','الشركة','تاريخ تقديم الطلب','تاريخ الاستحقاق','القيمة','التكرار','ملاحظات'],
+    ['مورد الخامات - شركة النور','مورد','داما','2026-09-01','2026-09-20',25000,'شهري',''],
   ];
   const ws = XLSX.utils.aoa_to_sheet(wsData);
   const wb = XLSX.utils.book_new();
