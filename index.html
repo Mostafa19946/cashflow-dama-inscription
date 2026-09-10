@@ -942,39 +942,46 @@ let airtableRecordIndex = {};
 Object.keys(AIRTABLE_TABLE_IDS).forEach(k=>{ airtableRecordIndex[k] = new Map(); });
 
 function toAirtableRecord(tableKey, obj){
-  if (tableKey === 'commitments') return { LocalId: obj.id, Name: obj.name||'', Type: obj.type||'', TotalAmount: Number(obj.totalAmount)||0, RemainingAmount: Number(obj.remainingAmount)||0, DueDate: obj.dueDate||'', Recurrence: obj.recurrence||'', Notes: obj.notes||'', RequestNumber: obj.requestNumber||'', PaymentRequestNumber: obj.paymentRequestNumber||'', PaymentRequestDate: obj.paymentRequestDate||'', RequestDate: obj.requestDate||'', Urgency: obj.urgency||'', ApprovalsJSON: JSON.stringify({ approvals: obj.approvals||{}, company: obj.company||'', paymentOrderNumber: obj.paymentOrderNumber||'', paymentOrderDate: obj.paymentOrderDate||'', approvalDetails: obj.approvalDetails||{} }) };
+  if (tableKey === 'commitments') return { LocalId: obj.id, Name: obj.name||'', Type: obj.type||'', Company: obj.company||'', TotalAmount: Number(obj.totalAmount)||0, RemainingAmount: Number(obj.remainingAmount)||0, DueDate: obj.dueDate||'', Recurrence: obj.recurrence||'', Notes: obj.notes||'', RequestNumber: obj.requestNumber||'', PaymentRequestNumber: obj.paymentRequestNumber||'', PaymentRequestDate: obj.paymentRequestDate||'', RequestDate: obj.requestDate||'', Urgency: obj.urgency||'', ApprovalsJSON: JSON.stringify(obj.approvals||{}), PaymentOrderNumber: obj.paymentOrderNumber||'', PaymentOrderDate: obj.paymentOrderDate||'', ApprovalSignaturesJSON: JSON.stringify(obj.approvalDetails||{}) };
   if (tableKey === 'inflows') return { LocalId: obj.id, Name: obj.name||'', Source: obj.source||'', ExpectedAmount: Number(obj.expectedAmount)||0, RemainingAmount: Number(obj.remainingAmount)||0, ExpectedDate: obj.expectedDate||'', Notes: obj.notes||'', Certainty: obj.certainty||'' };
   if (tableKey === 'transactions') return { LocalId: obj.id, Kind: obj.kind||'', RefId: obj.refId||'', RefName: obj.refName||'', Amount: Number(obj.amount)||0, Date: obj.date||'', AccountId: obj.accountId||'' };
   if (tableKey === 'accounts') return { LocalId: obj.id, Name: obj.name||'', Type: obj.type||'', Balance: Number(obj.balance)||0 };
-  if (tableKey === 'users') return { LocalId: obj.id, Username: obj.username||'', Password: obj.password||'', DisplayName: obj.displayName||'', Role: obj.role||'', ApprovalRole: obj.approvalRole||'' };
+  if (tableKey === 'users') return { LocalId: obj.id, Username: obj.username||'', Password: obj.password||'', DisplayName: obj.displayName||'', Role: obj.role||'', ApprovalRole: obj.approvalRole||'', SignatureData: obj.signatureData||'' };
   if (tableKey === 'customTypes') return { LocalId: obj, Name: obj };
   return {};
 }
 function fromAirtableRecord(tableKey, rec){
   const f = rec.fields || {};
   if (tableKey === 'commitments'){
-    let approvals = emptyApprovals(), company = '', paymentOrderNumber = '', paymentOrderDate = '', approvalDetails = {};
+    let approvals = emptyApprovals(), company = f.Company||'', paymentOrderNumber = f.PaymentOrderNumber||'', paymentOrderDate = f.PaymentOrderDate||'', approvalDetails = {};
+    // قراءة الاعتمادات: تدعم الصيغة الحالية (بوليانات مباشرة) والصيغة القديمة المغلّفة (توافق رجعي)
     try {
-      const parsed = JSON.parse(f.ApprovalsJSON||'{}');
-      if (parsed && typeof parsed==='object'){
-        if (parsed.approvals){
-          approvals = parsed.approvals;
-          company = parsed.company||'';
-          paymentOrderNumber = parsed.paymentOrderNumber||'';
-          paymentOrderDate = parsed.paymentOrderDate||'';
-          approvalDetails = parsed.approvalDetails||{};
-        } else if ('accountsManager' in parsed || 'financialManager' in parsed || 'chairman' in parsed || 'viceChairman' in parsed){
-          approvals = parsed; // صيغة قديمة: الملف كان فيه الاعتمادات مباشرة من غير تغليف
+      const parsedApprovals = JSON.parse(f.ApprovalsJSON||'{}');
+      if (parsedApprovals && typeof parsedApprovals==='object'){
+        if (parsedApprovals.approvals){
+          // صيغة قديمة كانت مغلّفة (approvals/company/paymentOrderNumber... جوه بعض)
+          approvals = parsedApprovals.approvals;
+          if (!company) company = parsedApprovals.company||'';
+          if (!paymentOrderNumber) paymentOrderNumber = parsedApprovals.paymentOrderNumber||'';
+          if (!paymentOrderDate) paymentOrderDate = parsedApprovals.paymentOrderDate||'';
+          approvalDetails = parsedApprovals.approvalDetails||{};
+        } else if ('accountsManager' in parsedApprovals || 'financialManager' in parsedApprovals || 'chairman' in parsedApprovals || 'viceChairman' in parsedApprovals){
+          approvals = parsedApprovals; // صيغة حالية: بوليانات الاعتماد مباشرة
         }
       }
     } catch(e){ /* يفضل القيم الافتراضية */ }
+    // قراءة توقيعات الاعتماد من عمودها المخصص المنفصل
+    try {
+      const parsedSigs = JSON.parse(f.ApprovalSignaturesJSON||'{}');
+      if (parsedSigs && typeof parsedSigs==='object' && Object.keys(parsedSigs).length) approvalDetails = parsedSigs;
+    } catch(e){ /* يفضل الافتراضي */ }
     const attachments = Array.isArray(f.Attachments) ? f.Attachments.map(a=>({ id:a.id, url:a.url, filename:a.filename, size:a.size })) : [];
     return { id: f.LocalId, name: f.Name||'', type: f.Type||'', company, totalAmount: Number(f.TotalAmount)||0, remainingAmount: Number(f.RemainingAmount)||0, dueDate: f.DueDate||'', recurrence: f.Recurrence||'', notes: f.Notes||'', requestNumber: f.RequestNumber||'', paymentRequestNumber: f.PaymentRequestNumber||'', paymentRequestDate: f.PaymentRequestDate||'', requestDate: f.RequestDate||'', urgency: f.Urgency||'عادي', approvals, paymentOrderNumber, paymentOrderDate, attachments, approvalDetails };
   }
   if (tableKey === 'inflows') return { id: f.LocalId, name: f.Name||'', source: f.Source||'', expectedAmount: Number(f.ExpectedAmount)||0, remainingAmount: Number(f.RemainingAmount)||0, expectedDate: f.ExpectedDate||'', notes: f.Notes||'', certainty: f.Certainty||'مؤكد' };
   if (tableKey === 'transactions') return { id: f.LocalId, kind: f.Kind||'', refId: f.RefId||'', refName: f.RefName||'', amount: Number(f.Amount)||0, date: f.Date||'', accountId: f.AccountId||null };
   if (tableKey === 'accounts') return { id: f.LocalId, name: f.Name||'', type: f.Type||'', balance: Number(f.Balance)||0 };
-  if (tableKey === 'users') return { id: f.LocalId, username: f.Username||'', password: f.Password||'', displayName: f.DisplayName||'', role: f.Role||'user', approvalRole: f.ApprovalRole||'' };
+  if (tableKey === 'users') return { id: f.LocalId, username: f.Username||'', password: f.Password||'', displayName: f.DisplayName||'', role: f.Role||'user', approvalRole: f.ApprovalRole||'', signatureData: f.SignatureData||'' };
   if (tableKey === 'customTypes') return f.Name || f.LocalId || '';
   return null;
 }
@@ -1149,7 +1156,8 @@ async function syncTableToAirtable(tableKey, items){
     console.error('Airtable sync failed', tableKey, e);
     delete syncInFlight[tableKey];
     setSyncStatus('error');
-    showToast(`❌ فشل حفظ التغيير في ${TABLE_LABELS_AR[tableKey]||tableKey} على القاعدة المشتركة! التغيير محفوظ على جهازك بس لحد ما يرجع الاتصال.`, 'error');
+    const reason = (e && e.message) ? e.message.slice(0,140) : '';
+    showToast(`❌ فشل حفظ التغيير في ${TABLE_LABELS_AR[tableKey]||tableKey} على القاعدة المشتركة! التغيير محفوظ على جهازك بس لحد ما يرجع الاتصال.${reason?(' (تفاصيل: '+reason+')'):''}`, 'error');
   }
 }
 async function doSyncTable(tableKey, items){
@@ -1267,7 +1275,7 @@ function tryAutoLogin(){
   const savedId = localStorage.getItem('cf_currentUserId');
   if (savedId){
     const u = users.find(x=>x.id===savedId);
-    if (u){ currentUser = u; currentUser.signatureData = loadUserSignatureLocal(u.id); }
+    if (u){ currentUser = u; if (!currentUser.signatureData) currentUser.signatureData = loadUserSignatureLocal(u.id); }
   }
 }
 
@@ -1406,17 +1414,23 @@ document.getElementById('saveSignatureBtn').addEventListener('click', ()=>{
   const dataUrl = canvas.toDataURL('image/png');
   currentUser.signatureData = dataUrl;
   saveUserSignatureLocal(currentUser.id, dataUrl);
+  const u = users.find(x=>x.id===currentUser.id);
+  if (u) u.signatureData = dataUrl;
+  saveUsers();
   renderSignaturePreview();
-  showToast('✍️ تم حفظ توقيعك بنجاح على هذا الجهاز، وهيتضاف تلقائيًا لأي اعتماد تعمله منه.', 'success');
+  showToast('✍️ تم حفظ توقيعك وهيتزامن مع كل الأجهزة، وهيتضاف تلقائيًا لأي اعتماد تعمله.', 'success');
 });
 document.getElementById('removeSignatureBtn').addEventListener('click', ()=>{
   if (!currentUser.signatureData){ showToast('مفيش توقيع محفوظ أصلاً.', 'info'); return; }
   if (!confirm('متأكد إنك عايز تحذف توقيعك المحفوظ؟')) return;
   currentUser.signatureData = '';
   saveUserSignatureLocal(currentUser.id, '');
+  const u = users.find(x=>x.id===currentUser.id);
+  if (u) u.signatureData = '';
+  saveUsers();
   clearSignatureCanvas();
   renderSignaturePreview();
-  showToast('🗑️ تم حذف التوقيع المحفوظ.', 'success');
+  showToast('🗑️ تم حذف التوقيع المحفوظ من كل الأجهزة.', 'success');
 });
 
 async function showApp(){
@@ -3211,7 +3225,7 @@ function doLoginAttempt(){
     return;
   }
   currentUser = u;
-  currentUser.signatureData = loadUserSignatureLocal(u.id);
+  if (!currentUser.signatureData) currentUser.signatureData = loadUserSignatureLocal(u.id);
   localStorage.setItem('cf_currentUserId', u.id);
   document.getElementById('loginUsername').value = '';
   document.getElementById('loginPassword').value = '';
