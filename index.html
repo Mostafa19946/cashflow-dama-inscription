@@ -929,7 +929,7 @@ function cacheLocal(key, val){ try{ localStorage.setItem('cf_'+key, JSON.stringi
 
 // ---- Airtable shared-database layer ----
 const AIRTABLE_BASE_ID = 'appOu5N99IuXbI1kI';
-const AIRTABLE_TOKEN = 'pat9IfTFtiwuXYcQu.da030bfe9963eb7212e58f1d75bfc8af009660ca0a3a7cc9f4b057248b65624b';
+const AIRTABLE_TOKEN = 'patv9sRCZYFQaut4k.2724394258b562a78d514652650521e5bebe5fc35b66f80f877b2409838f8a8f';
 const AIRTABLE_TABLE_IDS = {
   commitments: 'tblrOubMnWkcLSGZC',
   inflows: 'tblRRYetQXVrIxuKh',
@@ -1143,11 +1143,13 @@ async function loadFromAirtable(tableKey){
     return items;
   } catch(e){
     console.error('Airtable load failed:', tableKey, e);
+    lastAirtableError = e;
     return null;
   }
 }
 
 let syncInFlight = {};
+let lastAirtableError = null;
 const TABLE_LABELS_AR = { commitments:'الالتزامات', inflows:'التحصيلات', transactions:'سجل الحركة', accounts:'الحسابات', users:'المستخدمين', customTypes:'أنواع الالتزام' };
 async function syncTableToAirtable(tableKey, items){
   if (!AIRTABLE_TABLE_IDS[tableKey]) return;
@@ -3372,7 +3374,8 @@ async function boot(){
     users = remoteUsers;
     cacheLocal('users', users);
   } else if (remoteUsers === null){
-    document.getElementById('loginError').textContent = 'تعذر الاتصال بقاعدة البيانات المشتركة. هيتم استخدام آخر نسخة محفوظة على الجهاز ده لحد ما يرجع الاتصال.';
+    const reason = (lastAirtableError && lastAirtableError.message) ? lastAirtableError.message.slice(0,200) : 'غير معروف';
+    document.getElementById('loginError').textContent = `تعذر الاتصال بقاعدة البيانات المشتركة. هيتم استخدام آخر نسخة محفوظة على الجهاز ده لحد ما يرجع الاتصال. [السبب: ${reason}]`;
   }
   btn.disabled = false;
   btn.textContent = 'دخول';
