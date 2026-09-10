@@ -2812,6 +2812,13 @@ document.querySelectorAll('.stat-card.clickable[data-filter]').forEach(card=>{
   card.addEventListener('click', ()=>{
     state.commitCategoryFilter = card.dataset.filter;
     state.commitPage = 0;
+    state.commitSearch = '';
+    document.getElementById('commitSearchInput').value = '';
+    COMMIT_FILTER_FIELDS.forEach(([elId, key])=>{
+      document.getElementById(elId).value = '';
+      state.commitAdvFilters[key] = '';
+    });
+    document.getElementById('commitAdvFilters').classList.add('hidden');
     document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
     document.querySelector('.tab-btn[data-tab="commitments"]').classList.add('active');
     ['overview','commitments','inflows','ledger','users'].forEach(t=>{
