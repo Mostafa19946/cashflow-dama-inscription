@@ -1032,8 +1032,17 @@ async function airtableBatchCreate(tableKey, fieldsArray){
 async function airtableBatchUpdate(tableKey, recordsWithId){
   const results = [];
   for (const group of chunkArr(recordsWithId, 10)){
-    const data = await airtableApi('PATCH', tableKey, '', { records: group });
-    results.push(...data.records);
+    try {
+      const data = await airtableApi('PATCH', tableKey, '', { records: group });
+      results.push(...data.records);
+    } catch(e){
+      // بعض المتصفحات بترفض طلبات PATCH لأسباب أمنية (CORS) — ننشئ نسخة جديدة الأول، وبعدها نمسح القديمة (عشان لو حصل خطأ متضيعش البيانات)
+      console.warn('PATCH فشل، جاري المحاولة بإنشاء نسخة جديدة بدلها:', tableKey, e && e.message);
+      const created = await airtableBatchCreate(tableKey, group.map(r=>r.fields));
+      const idsToDelete = group.map(r=>r.id);
+      await airtableBatchDelete(tableKey, idsToDelete);
+      results.push(...created);
+    }
   }
   return results;
 }
@@ -1188,9 +1197,11 @@ async function doSyncTable(tableKey, items){
     });
   }
   if (toUpdate.length){
-    await airtableBatchUpdate(tableKey, toUpdate.map(u=>({ id: u.id, fields: u.fields })));
-    toUpdate.forEach(u=>{
-      index.set(u.__localId, { recordId: u.id, fieldsJSON: u.__fieldsJSON });
+    const updatedRecords = await airtableBatchUpdate(tableKey, toUpdate.map(u=>({ id: u.id, fields: u.fields })));
+    const fieldsJSONByLocalId = new Map(toUpdate.map(u=>[u.__localId, u.__fieldsJSON]));
+    updatedRecords.forEach(rec=>{
+      const localId = rec.fields ? rec.fields.LocalId : null;
+      if (localId) index.set(localId, { recordId: rec.id, fieldsJSON: fieldsJSONByLocalId.get(localId) || JSON.stringify(rec.fields) });
     });
   }
   if (toDeleteIds.length){
