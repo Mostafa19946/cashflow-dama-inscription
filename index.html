@@ -1764,7 +1764,12 @@ function renderGapPeriodsList(periods){
 
 function renderMiniLists(){
   const commitList = state.commitments.filter(c=>c.remainingAmount>0).sort((a,b)=>a.dueDate<b.dueDate?-1:1).slice(0,5);
-  const inflowList = state.inflows.filter(f=>f.remainingAmount>0 && isSaneDate(f.expectedDate)).sort((a,b)=>a.expectedDate<b.expectedDate?-1:1).slice(0,5);
+  const inflowList = state.inflows.filter(f=>{
+    if (f.remainingAmount<=0 || !isSaneDate(f.expectedDate)) return false;
+    const isLate = f.expectedDate < todayStr();
+    if (isLate && !isConfirmedInflow(f)) return false; // المتأخرات غير المؤكدة متتحسبش في القائمة دي
+    return true;
+  }).sort((a,b)=>a.expectedDate<b.expectedDate?-1:1).slice(0,5);
   const badDateList = state.inflows.filter(f=>f.remainingAmount>0 && !isSaneDate(f.expectedDate));
 
   const mc = document.getElementById('miniCommit');
