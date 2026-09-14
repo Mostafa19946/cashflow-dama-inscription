@@ -462,6 +462,7 @@ body.role-accountant .certainty-select
         <button class="btn-secondary" id="toggleImportCommit">استيراد من Excel</button>
         <button class="btn-mini btn-danger" id="clearAllCommits" style="align-self:center;">🗑️ حذف كل الالتزامات</button>
         <button class="btn-mini" id="printCommitList" style="align-self:center;">🖨️ طباعة القائمة</button>
+        <button class="btn-mini" id="renumberRequestsBtn" style="align-self:center;">🔢 إعادة ترقيم الطلبات حسب التاريخ</button>
       </div>
     </div>
     <div class="search-row" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
@@ -734,6 +735,14 @@ function nextSeqNumber(prefix, fieldName){
 function nextRequestNumber(){ return nextSeqNumber('REQ', 'requestNumber'); }
 function nextPaymentRequestNumber(){ return nextSeqNumber('PAY', 'paymentRequestNumber'); }
 function nextPaymentOrderNumber(){ return nextSeqNumber('ORD', 'paymentOrderNumber'); }
+
+function renumberRequestsByDate(){
+  const dated = state.commitments.filter(c=>c.requestDate).sort((a,b)=> a.requestDate<b.requestDate?-1:(a.requestDate>b.requestDate?1:0));
+  const undated = state.commitments.filter(c=>!c.requestDate);
+  let n = 1;
+  dated.forEach(c=>{ c.requestNumber = 'REQ-'+String(n++).padStart(4,'0'); });
+  undated.forEach(c=>{ c.requestNumber = 'REQ-'+String(n++).padStart(4,'0'); });
+}
 
 function issuePaymentOrderIfReady(c){
   if (isFullyApproved(c.approvals, c.totalAmount) && !c.paymentOrderNumber){
@@ -1489,9 +1498,9 @@ function isConfirmedInflow(f){ return (f.certainty||'مؤكد')==='مؤكد'; }
 function totals(){
   const totalRemainingCommit = state.commitments.reduce((s,c)=>s+Math.max(0,c.remainingAmount),0);
   const totalRemainingInflow = state.inflows.reduce((s,f)=>s+(f.remainingAmount>0 && isSaneDate(f.expectedDate) && isConfirmedInflow(f) ? f.remainingAmount : 0),0);
-  // السدادات اللي متسجّلاش من حساب بنك/خزينة (خارج البنوك والخزائن) بتتخصم من الالتزام بس مبتأثرش على الرصيد المتاح
+  // السدادات والتحصيلات اللي متسجّلاش من حساب بنك/خزينة (خارج البنوك والخزائن) بتتخصم/بتتضاف للالتزام بس مبتأثرش على الرصيد الفعلي المتاح
   const totalPaid = state.transactions.filter(t=>t.kind==='سداد' && t.accountId).reduce((s,t)=>s+t.amount,0);
-  const totalCollected = state.transactions.filter(t=>t.kind==='تحصيل').reduce((s,t)=>s+t.amount,0);
+  const totalCollected = state.transactions.filter(t=>t.kind==='تحصيل' && t.accountId).reduce((s,t)=>s+t.amount,0);
   const cashBalance = totalOpeningBalance() + totalCollected - totalPaid;
   return { totalRemainingCommit, totalRemainingInflow, cashBalance };
 }
@@ -2196,7 +2205,7 @@ function populateAccountSelects(){
     sel.innerHTML = '<option value="">🚫 خارج البنوك والخزائن (بدون تأثير على الرصيد المتاح)</option>' + accOptions;
   });
   document.querySelectorAll('.collect-account').forEach(sel=>{
-    sel.innerHTML = '<option value="">— بدون تحديد —</option>' + accOptions;
+    sel.innerHTML = '<option value="">🚫 خارج البنوك والخزائن (بدون تأثير على الرصيد المتاح)</option>' + accOptions;
   });
 }
 
@@ -2742,6 +2751,14 @@ document.getElementById('clearAllCommits').addEventListener('click', ()=>{
   persistAndRenderData('commitments');
 });
 document.getElementById('printCommitList').addEventListener('click', printCommitmentsList);
+document.getElementById('renumberRequestsBtn').addEventListener('click', ()=>{
+  const n = state.commitments.length;
+  if (!n){ alert('مفيش التزامات مسجّلة أصلاً.'); return; }
+  if (!confirm(`هيتم إعادة ترقيم كل الطلبات الـ ${n} من الأول تسلسليًا حسب تاريخ تقديم الطلب (الأقدم REQ-0001 وهكذا). أرقام الطلبات الحالية هتتغيّر — لو فيه أوراق مطبوعة عليها الأرقام القديمة، هتحتاجي تطبعيها تاني. تكملي؟`)) return;
+  renumberRequestsByDate();
+  persistAndRenderData('commitments');
+  showToast(`✅ اتعمل ترقيم تسلسلي جديد لكل الـ ${n} طلب حسب تاريخ التقديم`, 'success');
+});
 
 document.getElementById('pagerCommit').addEventListener('click', e=>{
   const t = e.target;
@@ -3189,11 +3206,13 @@ function renderImportPreviewCommit(rows){
       });
       markLocalAction(newId);
     });
+    renumberRequestsByDate();
     document.getElementById('excelFileInputCommit').value = '';
     el.classList.add('hidden');
     el.innerHTML = '';
     document.getElementById('importCommitPanel').classList.add('hidden');
     persistAndRenderData('commitments');
+    showToast(`✅ اتضاف ${valid.length} التزام، وأعيد ترقيم كل الطلبات تسلسليًا حسب تاريخ التقديم`, 'success');
   });
   document.getElementById('cancelImportBtnCommit').addEventListener('click', ()=>{
     document.getElementById('excelFileInputCommit').value = '';
