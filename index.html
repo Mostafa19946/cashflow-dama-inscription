@@ -944,7 +944,7 @@ Object.keys(AIRTABLE_TABLE_IDS).forEach(k=>{ airtableRecordIndex[k] = new Map();
 function toAirtableRecord(tableKey, obj){
   if (tableKey === 'commitments') return { LocalId: obj.id, Name: obj.name||'', Type: obj.type||'', Company: obj.company||'', TotalAmount: Number(obj.totalAmount)||0, RemainingAmount: Number(obj.remainingAmount)||0, DueDate: obj.dueDate||'', Recurrence: obj.recurrence||'', Notes: obj.notes||'', RequestNumber: obj.requestNumber||'', PaymentRequestNumber: obj.paymentRequestNumber||'', PaymentRequestDate: obj.paymentRequestDate||'', RequestDate: obj.requestDate||'', Urgency: obj.urgency||'', ApprovalsJSON: JSON.stringify(obj.approvals||{}), PaymentOrderNumber: obj.paymentOrderNumber||'', PaymentOrderDate: obj.paymentOrderDate||'', ApprovalSignaturesJSON: JSON.stringify(obj.approvalDetails||{}) };
   if (tableKey === 'inflows') return { LocalId: obj.id, Name: obj.name||'', Source: obj.source||'', ExpectedAmount: Number(obj.expectedAmount)||0, RemainingAmount: Number(obj.remainingAmount)||0, ExpectedDate: obj.expectedDate||'', Notes: obj.notes||'', Certainty: obj.certainty||'' };
-  if (tableKey === 'transactions') return { LocalId: obj.id, Kind: obj.kind||'', RefId: obj.refId||'', RefName: obj.refName||'', Amount: Number(obj.amount)||0, Date: obj.date||'', AccountId: obj.accountId||'' };
+  if (tableKey === 'transactions') return { LocalId: obj.id, Kind: obj.kind||'', RefId: obj.refId||'', RefName: obj.refName||'', Amount: Number(obj.amount)||0, Date: obj.date||'', AccountId: obj.accountId||'', DollarDifference: Number(obj.dollarDifference)||0, Discount: Number(obj.discount)||0 };
   if (tableKey === 'accounts') return { LocalId: obj.id, Name: obj.name||'', Type: obj.type||'', Balance: Number(obj.balance)||0 };
   if (tableKey === 'users') return { LocalId: obj.id, Username: obj.username||'', Password: obj.password||'', DisplayName: obj.displayName||'', Role: obj.role||'', ApprovalRole: obj.approvalRole||'', SignatureData: obj.signatureData||'' };
   if (tableKey === 'customTypes') return { LocalId: obj, Name: obj };
@@ -979,7 +979,7 @@ function fromAirtableRecord(tableKey, rec){
     return { id: f.LocalId, name: f.Name||'', type: f.Type||'', company, totalAmount: Number(f.TotalAmount)||0, remainingAmount: Number(f.RemainingAmount)||0, dueDate: f.DueDate||'', recurrence: f.Recurrence||'', notes: f.Notes||'', requestNumber: f.RequestNumber||'', paymentRequestNumber: f.PaymentRequestNumber||'', paymentRequestDate: f.PaymentRequestDate||'', requestDate: f.RequestDate||'', urgency: f.Urgency||'عادي', approvals, paymentOrderNumber, paymentOrderDate, attachments, approvalDetails };
   }
   if (tableKey === 'inflows') return { id: f.LocalId, name: f.Name||'', source: f.Source||'', expectedAmount: Number(f.ExpectedAmount)||0, remainingAmount: Number(f.RemainingAmount)||0, expectedDate: f.ExpectedDate||'', notes: f.Notes||'', certainty: f.Certainty||'مؤكد' };
-  if (tableKey === 'transactions') return { id: f.LocalId, kind: f.Kind||'', refId: f.RefId||'', refName: f.RefName||'', amount: Number(f.Amount)||0, date: f.Date||'', accountId: f.AccountId||null };
+  if (tableKey === 'transactions') return { id: f.LocalId, kind: f.Kind||'', refId: f.RefId||'', refName: f.RefName||'', amount: Number(f.Amount)||0, date: f.Date||'', accountId: f.AccountId||null, dollarDifference: Number(f.DollarDifference)||0, discount: Number(f.Discount)||0 };
   if (tableKey === 'accounts') return { id: f.LocalId, name: f.Name||'', type: f.Type||'', balance: Number(f.Balance)||0 };
   if (tableKey === 'users') return { id: f.LocalId, username: f.Username||'', password: f.Password||'', displayName: f.DisplayName||'', role: f.Role||'user', approvalRole: f.ApprovalRole||'', signatureData: f.SignatureData||'' };
   if (tableKey === 'customTypes') return f.Name || f.LocalId || '';
@@ -2019,15 +2019,19 @@ function renderInflowTable(){
     <tr class="pay-row hidden" id="collectrow-${f.id}">
       <td colspan="9">
         <div class="pay-inline">
-          <label>المبلغ المحصّل (عدّل الرقم لتسجيل تحصيل جزئي)</label>
-          <input type="number" class="collect-amount" data-id="${f.id}" value="${f.remainingAmount}" max="${f.remainingAmount}" min="0.01" step="0.01" />
+          <label>المبلغ المحصّل نقدًا (عدّل الرقم لتسجيل تحصيل جزئي)</label>
+          <input type="number" class="collect-amount" data-id="${f.id}" value="${f.remainingAmount}" min="0.01" step="0.01" />
+          <label>فرق الدولار (+/-)</label>
+          <input type="number" class="collect-dollar-diff" data-id="${f.id}" value="0" step="0.01" placeholder="0" style="width:100px;" />
+          <label>الخصم</label>
+          <input type="number" class="collect-discount" data-id="${f.id}" value="0" min="0" step="0.01" placeholder="0" style="width:100px;" />
           <label>تاريخ التحصيل</label>
           <input type="date" class="collect-date" data-id="${f.id}" value="${todayStr()}" />
           <label>تم التحصيل في حساب</label>
           <select class="collect-account account-select" data-id="${f.id}"></select>
           <button class="btn-primary btn-sm collect-confirm" data-id="${f.id}">تأكيد التحصيل</button>
         </div>
-        <p class="panel-sub" style="margin-top:6px;">محصّل حتى الآن: ${fmtMoney(f.expectedAmount - f.remainingAmount)} من ${fmtMoney(f.expectedAmount)} — سيب الرقم زي ما هو لتحصيل كامل، أو قلّله لتسجيل دفعة جزئية.</p>
+        <p class="panel-sub" style="margin-top:6px;">محصّل حتى الآن: ${fmtMoney(f.expectedAmount - f.remainingAmount)} من ${fmtMoney(f.expectedAmount)} — سيب المبلغ النقدي زي ما هو لتحصيل كامل، أو قلّله لتسجيل دفعة جزئية. فرق الدولار والخصم بيتضافوا/بيتخصموا من "المتبقي" برضه، بس من غير ما يأثروا على الرصيد النقدي الفعلي (لأنهم مش فلوس داخلة فعليًا).</p>
       </td>
     </tr>
     <tr class="edit-row hidden" id="editrow-inflow-${f.id}">
@@ -2094,8 +2098,8 @@ function renderLedger(){
           <tr>
             <td class="ledger-date">${fmtDateLabel(t.date)}</td>
             <td><span class="badge ${t.kind==='تحصيل'?'st-done':'st-late'}">${t.kind}</span></td>
-            <td>${escapeHtml(t.refName)}${t.accountId ? `<div class="td-note">${accountIcon((accounts.find(a=>a.id===t.accountId)||{}).type)} ${escapeHtml((accounts.find(a=>a.id===t.accountId)||{}).name||'حساب محذوف')}</div>` : ''}</td>
-            <td class="num ${t.kind==='تحصيل'?'pos':'neg'}">${t.kind==='تحصيل'?'+':'−'}${fmtMoney(t.amount)}</td>
+            <td>${escapeHtml(t.refName)}${t.accountId ? `<div class="td-note">${accountIcon((accounts.find(a=>a.id===t.accountId)||{}).type)} ${escapeHtml((accounts.find(a=>a.id===t.accountId)||{}).name||'حساب محذوف')}</div>` : ''}${t.dollarDifference?`<div class="td-note">فرق دولار: ${fmtMoney(t.dollarDifference)}</div>`:''}${t.discount?`<div class="td-note">خصم: ${fmtMoney(t.discount)}</div>`:''}</td>
+            <td class="num ${t.kind==='تحصيل'?'pos':'neg'}">${t.kind==='تحصيل'?'+':'−'}${fmtMoney(t.amount)}${(t.dollarDifference||t.discount)?`<div class="td-note" style="direction:rtl;">إجمالي التسوية: ${fmtMoney(t.amount+(t.dollarDifference||0)+(t.discount||0))}</div>`:''}</td>
             <td class="actions">
               <button class="btn-mini txn-edit-toggle" data-id="${t.id}">تعديل</button>
               <button class="btn-mini btn-danger txn-delete" data-id="${t.id}">حذف</button>
@@ -2416,6 +2420,8 @@ function adjustParentForTransaction(t, delta){
   }
 }
 
+function txnSettledTotal(t){ return (Number(t.amount)||0) + (Number(t.dollarDifference)||0) + (Number(t.discount)||0); }
+
 document.getElementById('ledgerGroups').addEventListener('click', e=>{
   const t = e.target;
   if (t.classList.contains('txn-edit-toggle')){
@@ -2426,8 +2432,8 @@ document.getElementById('ledgerGroups').addEventListener('click', e=>{
     const id = t.dataset.id;
     const txn = state.transactions.find(x=>x.id===id);
     if (!txn) return;
-    if (!confirm(`متأكد إنك عايز تحذف عملية "${txn.kind}" بمبلغ ${fmtMoney(txn.amount)}؟ المبلغ ده هيترجع للمتبقي في البند الأصلي.`)) return;
-    adjustParentForTransaction(txn, txn.amount);
+    if (!confirm(`متأكد إنك عايز تحذف عملية "${txn.kind}" بإجمالي ${fmtMoney(txnSettledTotal(txn))}؟ المبلغ ده هيترجع للمتبقي في البند الأصلي.`)) return;
+    adjustParentForTransaction(txn, txnSettledTotal(txn));
     state.transactions = state.transactions.filter(x=>x.id!==id);
     persistAndRenderData('transactions', txn.kind==='تحصيل' ? 'inflows' : 'commitments');
   } else if (t.classList.contains('txn-edit-save')){
@@ -2440,10 +2446,10 @@ document.getElementById('ledgerGroups').addEventListener('click', e=>{
       alert('تأكد إن المبلغ والتاريخ مكتوبين صح.');
       return;
     }
-    adjustParentForTransaction(txn, txn.amount);
+    adjustParentForTransaction(txn, txnSettledTotal(txn));
     txn.amount = newAmount;
     txn.date = newDate;
-    adjustParentForTransaction(txn, -newAmount);
+    adjustParentForTransaction(txn, -txnSettledTotal(txn));
     persistAndRenderData('transactions', txn.kind==='تحصيل' ? 'inflows' : 'commitments');
   }
 });
@@ -2640,16 +2646,20 @@ document.getElementById('inflowTbody').addEventListener('click', e=>{
   } else if (t.classList.contains('collect-confirm')){
     const id = t.dataset.id;
     const amount = parseFloat(document.querySelector(`.collect-amount[data-id="${id}"]`).value);
+    const dollarDiff = parseFloat(document.querySelector(`.collect-dollar-diff[data-id="${id}"]`).value) || 0;
+    const discount = parseFloat(document.querySelector(`.collect-discount[data-id="${id}"]`).value) || 0;
     const date = document.querySelector(`.collect-date[data-id="${id}"]`).value || todayStr();
     const accountId = document.querySelector(`.collect-account[data-id="${id}"]`).value || null;
     if (!amount || amount<=0) return;
     const f = state.inflows.find(f=>f.id===id);
     if (!f) return;
-    f.remainingAmount = Math.max(0, +(f.remainingAmount-amount).toFixed(2));
+    const totalSettled = amount + dollarDiff + discount;
+    f.remainingAmount = Math.max(0, +(f.remainingAmount-totalSettled).toFixed(2));
     const txnId2 = uid();
-    state.transactions.push({ id: txnId2, kind:'تحصيل', refId:id, refName:f.name, amount, date, accountId });
+    state.transactions.push({ id: txnId2, kind:'تحصيل', refId:id, refName:f.name, amount, date, accountId, dollarDifference: dollarDiff, discount });
     markLocalAction(txnId2); markLocalAction(id);
     persistAndRenderData('inflows', 'transactions');
+    showToast(`✅ اتسجل تحصيل ${fmtMoney(amount)} ج.م${dollarDiff?` + فرق دولار ${fmtMoney(dollarDiff)}`:''}${discount?` + خصم ${fmtMoney(discount)}`:''} — الإجمالي المخصوم من المتبقي: ${fmtMoney(totalSettled)}`, 'success');
   } else if (t.classList.contains('edit-toggle-inflow')){
     document.getElementById('editrow-inflow-'+t.dataset.id).classList.toggle('hidden');
   } else if (t.classList.contains('edit-cancel-inflow')){
