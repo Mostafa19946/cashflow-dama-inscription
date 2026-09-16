@@ -151,11 +151,14 @@ tbody tr:hover td { background:var(--surface-2); }
 .gap-card-days { font-size:20px; font-weight:700; color:var(--deficit); margin:4px 0; }
 .gap-card-min { font-size:11.5px; color:var(--muted); }
 .gap-card-min b { color:var(--deficit); font-family:'IBM Plex Mono',monospace; }
-.monthly-table { width:100%; border-collapse:collapse; font-size:12.5px; }
-.monthly-table th { text-align:right; color:var(--muted); font-weight:600; font-size:11px; padding:8px 10px; border-bottom:1px solid var(--line-strong); }
-.monthly-table td { padding:9px 10px; border-bottom:1px solid var(--line); }
+.monthly-table { width:100%; border-collapse:collapse; font-size:12.5px; table-layout:fixed; border:1px solid var(--line-strong); }
+.monthly-table th { text-align:right; color:var(--muted); font-weight:600; font-size:11px; padding:9px 10px; border-bottom:1px solid var(--line-strong); border-inline-start:1px solid var(--line); background:var(--surface-2); }
+.monthly-table th:first-child, .monthly-table td:first-child { border-inline-start:none; width:26%; }
+.monthly-table td { padding:9px 10px; border-bottom:1px solid var(--line); border-inline-start:1px solid var(--line); vertical-align:middle; }
+.monthly-table tr:last-child td { border-bottom:none; }
 .monthly-table tr.gap-row td { background:var(--deficit-dim); }
 .monthly-table .this-month { color:var(--brass); font-weight:700; }
+.monthly-table .td-note { display:inline-block; margin-inline-start:6px; font-size:10px; color:var(--muted-2); background:var(--surface-3); border-radius:4px; padding:1px 6px; }
 
 .ledger-divider { border-top:3px double var(--line-strong); margin:24px 0; }
 .two-col { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
@@ -1776,26 +1779,43 @@ function renderMonthlyAnalysis(){
   if (!box) return;
   const buckets = {};
   const ensureBucket = key => { if (!buckets[key]) buckets[key] = { expenses:0, collections:0 }; return buckets[key]; };
+  const thisMonthKey = todayStr().slice(0,7);
+
+  // الشهور اللي فاتت: أرقام فعلية حقيقية من سجل الحركة (اللي اتسدد/اتحصّل فعلاً)
+  state.transactions.forEach(t=>{
+    if (!isSaneDate(t.date)) return;
+    const key = t.date.slice(0,7);
+    if (key >= thisMonthKey) return;
+    if (t.kind==='سداد') ensureBucket(key).expenses += txnSettledTotal(t);
+    else if (t.kind==='تحصيل') ensureBucket(key).collections += txnSettledTotal(t);
+  });
+
+  // الشهر الحالي والشهور الجاية: أرقام متوقعة (المتبقي المخطط له)
   state.commitments.forEach(c=>{
-    if (c.remainingAmount>0 && isSaneDate(c.dueDate)) ensureBucket(c.dueDate.slice(0,7)).expenses += c.remainingAmount;
+    if (c.remainingAmount>0 && isSaneDate(c.dueDate) && c.dueDate.slice(0,7) >= thisMonthKey){
+      ensureBucket(c.dueDate.slice(0,7)).expenses += c.remainingAmount;
+    }
   });
   state.inflows.forEach(f=>{
-    if (f.remainingAmount>0 && isSaneDate(f.expectedDate)) ensureBucket(f.expectedDate.slice(0,7)).collections += f.remainingAmount;
+    if (f.remainingAmount>0 && isSaneDate(f.expectedDate) && f.expectedDate.slice(0,7) >= thisMonthKey){
+      ensureBucket(f.expectedDate.slice(0,7)).collections += f.remainingAmount;
+    }
   });
+
   const keys = Object.keys(buckets).sort();
   if (!keys.length){
     box.innerHTML = '<p class="empty" style="padding:14px 0;">لا توجد بيانات كافية لعرض التحليل الشهري بعد.</p>';
     return;
   }
-  const thisMonthKey = todayStr().slice(0,7);
   const rowsHtml = keys.map(key=>{
     const b = buckets[key];
     const gap = b.expenses - b.collections;
     const hasGap = gap > 0;
+    const isPast = key < thisMonthKey;
     const [y,m] = key.split('-');
     const label = `${MONTHS_AR[parseInt(m,10)-1]} ${y}`;
     return `<tr class="${hasGap?'gap-row':''}">
-      <td class="${key===thisMonthKey?'this-month':''}">${label}${key===thisMonthKey?' (الشهر الحالي)':''}</td>
+      <td class="${key===thisMonthKey?'this-month':''}">${label}${key===thisMonthKey?' (الشهر الحالي)':''}<span class="td-note">${isPast?'فعلي':'متوقع'}</span></td>
       <td class="num neg">${fmtMoney(b.expenses)}</td>
       <td class="num pos">${fmtMoney(b.collections)}</td>
       <td class="num ${hasGap?'neg':''}">${hasGap ? fmtMoney(gap) : '—'}</td>
@@ -1804,11 +1824,11 @@ function renderMonthlyAnalysis(){
   box.innerHTML = `
     <div class="table-wrap">
       <table class="monthly-table">
-        <thead><tr><th>الشهر</th><th>إجمالي المصروفات</th><th>إجمالي التحصيلات المتوقعة</th><th>الفجوة (لو موجودة)</th></tr></thead>
+        <thead><tr><th>الشهر</th><th>إجمالي المصروفات</th><th>إجمالي التحصيلات</th><th>الفجوة (لو موجودة)</th></tr></thead>
         <tbody>${rowsHtml}</tbody>
       </table>
     </div>
-    <p class="panel-sub" style="margin-top:8px;">المصروفات = المتبقي من الالتزامات حسب تاريخ الاستحقاق. التحصيلات = المتبقي من كل التحصيلات (بكل حالاتها: مؤكد/محتمل/قيد التحقق) حسب التاريخ المتوقع. الصفوف باللون الأحمر فيها فجوة تمويل (مصروفات أكتر من التحصيلات المتوقعة).</p>`;
+    <p class="panel-sub" style="margin-top:8px;">الشهور اللي فاتت = أرقام فعلية من سجل الحركة (اللي اتسدد واتحصّل بالفعل). الشهر الحالي وما بعده = أرقام متوقعة (المتبقي من الالتزامات والتحصيلات المخطط لها). الصفوف باللون الأحمر فيها فجوة تمويل (مصروفات أكتر من التحصيلات).</p>`;
 }
 
 function renderMiniLists(){
