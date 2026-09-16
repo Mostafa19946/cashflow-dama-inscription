@@ -437,7 +437,7 @@ body.role-accountant .certainty-select
     <div class="ledger-divider"></div>
     <div class="two-col">
       <div>
-        <h3 class="mini-head">أقرب 5 التزامات مستحقة</h3>
+        <h3 class="mini-head">أقرب 5 التزامات معتمدة</h3>
         <ul class="mini-list" id="miniCommit"></ul>
       </div>
       <div>
@@ -1763,7 +1763,7 @@ function renderGapPeriodsList(periods){
 }
 
 function renderMiniLists(){
-  const commitList = state.commitments.filter(c=>c.remainingAmount>0).sort((a,b)=>a.dueDate<b.dueDate?-1:1).slice(0,5);
+  const commitList = state.commitments.filter(c=>c.remainingAmount>0 && isFullyApproved(c.approvals, c.totalAmount)).sort((a,b)=>a.dueDate<b.dueDate?-1:1).slice(0,5);
   const inflowList = state.inflows.filter(f=>{
     if (f.remainingAmount<=0 || !isSaneDate(f.expectedDate)) return false;
     const isLate = f.expectedDate < todayStr();
@@ -1773,7 +1773,7 @@ function renderMiniLists(){
   const badDateList = state.inflows.filter(f=>f.remainingAmount>0 && !isSaneDate(f.expectedDate));
 
   const mc = document.getElementById('miniCommit');
-  mc.innerHTML = commitList.length ? commitList.map(c=>`<li><span>${escapeHtml(c.name)}</span><span class="mini-date">${fmtDateLabel(c.dueDate)}</span><span class="neg">${fmtMoney(c.remainingAmount)}</span></li>`).join('') : '<li class="empty">لا توجد التزامات معلقة</li>';
+  mc.innerHTML = commitList.length ? commitList.map(c=>`<li><span>${escapeHtml(c.name)}</span><span class="mini-date">${fmtDateLabel(c.dueDate)}</span><span class="neg">${fmtMoney(c.remainingAmount)}</span></li>`).join('') : '<li class="empty">لا توجد التزامات معتمدة معلقة</li>';
 
   const mi = document.getElementById('miniInflow');
   mi.innerHTML = inflowList.length ? inflowList.map(f=>{
@@ -2206,11 +2206,12 @@ function renderBulkBar(kind){
 
 function populateAccountSelects(){
   const accOptions = accounts.map(a=>`<option value="${escapeAttr(a.id)}">${accountIcon(a.type)} ${escapeHtml(a.name)}</option>`).join('');
+  const emptyWarning = accounts.length===0 ? '<option value="" disabled>⚠️ مفيش حسابات ظاهرة — تأكد من حالة الاتصال فوق (🔄/✅/⚠️) أو افتح "الأرصدة" وتحقق</option>' : '';
   document.querySelectorAll('.pay-account').forEach(sel=>{
-    sel.innerHTML = '<option value="">🚫 خارج البنوك والخزائن (بدون تأثير على الرصيد المتاح)</option>' + accOptions;
+    sel.innerHTML = '<option value="">🚫 خارج البنوك والخزائن (بدون تأثير على الرصيد المتاح)</option>' + emptyWarning + accOptions;
   });
   document.querySelectorAll('.collect-account').forEach(sel=>{
-    sel.innerHTML = '<option value="">🚫 خارج البنوك والخزائن (بدون تأثير على الرصيد المتاح)</option>' + accOptions;
+    sel.innerHTML = '<option value="">🚫 خارج البنوك والخزائن (بدون تأثير على الرصيد المتاح)</option>' + emptyWarning + accOptions;
   });
 }
 
