@@ -151,6 +151,11 @@ tbody tr:hover td { background:var(--surface-2); }
 .gap-card-days { font-size:20px; font-weight:700; color:var(--deficit); margin:4px 0; }
 .gap-card-min { font-size:11.5px; color:var(--muted); }
 .gap-card-min b { color:var(--deficit); font-family:'IBM Plex Mono',monospace; }
+.monthly-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+.monthly-table th { text-align:right; color:var(--muted); font-weight:600; font-size:11px; padding:8px 10px; border-bottom:1px solid var(--line-strong); }
+.monthly-table td { padding:9px 10px; border-bottom:1px solid var(--line); }
+.monthly-table tr.gap-row td { background:var(--deficit-dim); }
+.monthly-table .this-month { color:var(--brass); font-weight:700; }
 
 .ledger-divider { border-top:3px double var(--line-strong); margin:24px 0; }
 .two-col { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
@@ -433,6 +438,10 @@ body.role-accountant .certainty-select
     </div>
 
     <div id="gapPeriodsBox" style="margin-top:18px;"></div>
+
+    <div class="ledger-divider"></div>
+    <h3 class="mini-head">📊 تحليل شهري — مصروفات / تحصيلات / فجوة تمويل</h3>
+    <div id="monthlyAnalysisBox" style="margin-top:10px;"></div>
 
     <div class="ledger-divider"></div>
     <div class="two-col">
@@ -1762,6 +1771,46 @@ function renderGapPeriodsList(periods){
     </div>`;
 }
 
+function renderMonthlyAnalysis(){
+  const box = document.getElementById('monthlyAnalysisBox');
+  if (!box) return;
+  const buckets = {};
+  const ensureBucket = key => { if (!buckets[key]) buckets[key] = { expenses:0, collections:0 }; return buckets[key]; };
+  state.commitments.forEach(c=>{
+    if (c.remainingAmount>0 && isSaneDate(c.dueDate)) ensureBucket(c.dueDate.slice(0,7)).expenses += c.remainingAmount;
+  });
+  state.inflows.forEach(f=>{
+    if (f.remainingAmount>0 && isSaneDate(f.expectedDate) && isConfirmedInflow(f)) ensureBucket(f.expectedDate.slice(0,7)).collections += f.remainingAmount;
+  });
+  const keys = Object.keys(buckets).sort();
+  if (!keys.length){
+    box.innerHTML = '<p class="empty" style="padding:14px 0;">لا توجد بيانات كافية لعرض التحليل الشهري بعد.</p>';
+    return;
+  }
+  const thisMonthKey = todayStr().slice(0,7);
+  const rowsHtml = keys.map(key=>{
+    const b = buckets[key];
+    const gap = b.expenses - b.collections;
+    const hasGap = gap > 0;
+    const [y,m] = key.split('-');
+    const label = `${MONTHS_AR[parseInt(m,10)-1]} ${y}`;
+    return `<tr class="${hasGap?'gap-row':''}">
+      <td class="${key===thisMonthKey?'this-month':''}">${label}${key===thisMonthKey?' (الشهر الحالي)':''}</td>
+      <td class="num neg">${fmtMoney(b.expenses)}</td>
+      <td class="num pos">${fmtMoney(b.collections)}</td>
+      <td class="num ${hasGap?'neg':''}">${hasGap ? fmtMoney(gap) : '—'}</td>
+    </tr>`;
+  }).join('');
+  box.innerHTML = `
+    <div class="table-wrap">
+      <table class="monthly-table">
+        <thead><tr><th>الشهر</th><th>إجمالي المصروفات</th><th>إجمالي التحصيلات المتوقعة</th><th>الفجوة (لو موجودة)</th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>
+    <p class="panel-sub" style="margin-top:8px;">المصروفات = المتبقي من الالتزامات حسب تاريخ الاستحقاق. التحصيلات = المتبقي من التحصيلات المؤكدة حسب التاريخ المتوقع. الصفوف باللون الأحمر فيها فجوة تمويل (مصروفات أكتر من التحصيلات المتوقعة).</p>`;
+}
+
 function renderMiniLists(){
   const commitList = state.commitments.filter(c=>c.remainingAmount>0 && isFullyApproved(c.approvals, c.totalAmount)).sort((a,b)=>a.dueDate<b.dueDate?-1:1).slice(0,5);
   const inflowList = state.inflows.filter(f=>{
@@ -2219,6 +2268,7 @@ function renderAll(){
   const { cashBalance, timeline } = renderStats();
   renderChart(timeline);
   renderMiniLists();
+  renderMonthlyAnalysis();
   renderCommitTable();
   renderInflowTable();
   renderLedger();
