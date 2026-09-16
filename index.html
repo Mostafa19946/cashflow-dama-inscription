@@ -1780,7 +1780,7 @@ function renderMonthlyAnalysis(){
     if (c.remainingAmount>0 && isSaneDate(c.dueDate)) ensureBucket(c.dueDate.slice(0,7)).expenses += c.remainingAmount;
   });
   state.inflows.forEach(f=>{
-    if (f.remainingAmount>0 && isSaneDate(f.expectedDate) && isConfirmedInflow(f)) ensureBucket(f.expectedDate.slice(0,7)).collections += f.remainingAmount;
+    if (f.remainingAmount>0 && isSaneDate(f.expectedDate)) ensureBucket(f.expectedDate.slice(0,7)).collections += f.remainingAmount;
   });
   const keys = Object.keys(buckets).sort();
   if (!keys.length){
@@ -1808,7 +1808,7 @@ function renderMonthlyAnalysis(){
         <tbody>${rowsHtml}</tbody>
       </table>
     </div>
-    <p class="panel-sub" style="margin-top:8px;">المصروفات = المتبقي من الالتزامات حسب تاريخ الاستحقاق. التحصيلات = المتبقي من التحصيلات المؤكدة حسب التاريخ المتوقع. الصفوف باللون الأحمر فيها فجوة تمويل (مصروفات أكتر من التحصيلات المتوقعة).</p>`;
+    <p class="panel-sub" style="margin-top:8px;">المصروفات = المتبقي من الالتزامات حسب تاريخ الاستحقاق. التحصيلات = المتبقي من كل التحصيلات (بكل حالاتها: مؤكد/محتمل/قيد التحقق) حسب التاريخ المتوقع. الصفوف باللون الأحمر فيها فجوة تمويل (مصروفات أكتر من التحصيلات المتوقعة).</p>`;
 }
 
 function renderMiniLists(){
