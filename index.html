@@ -1880,7 +1880,15 @@ function optionsHtml(list, current){ return list.map(o=>`<option value="${escape
 const PAGE_SIZE = 50;
 
 function getFilteredCommitments(){
-  let allRows = state.commitments.slice().sort((a,b)=>a.dueDate<b.dueDate?-1:1);
+  let allRows = state.commitments.slice().sort((a,b)=>{
+    const monthA = isSaneDate(a.dueDate) ? a.dueDate.slice(0,7) : '';
+    const monthB = isSaneDate(b.dueDate) ? b.dueDate.slice(0,7) : '';
+    if (monthA !== monthB) return monthA < monthB ? -1 : 1;
+    const paidA = a.remainingAmount<=0 ? 1 : 0;
+    const paidB = b.remainingAmount<=0 ? 1 : 0;
+    if (paidA !== paidB) return paidA - paidB; // غير المسددة الأول، المسددة آخر القايمة في نفس الشهر
+    return a.dueDate < b.dueDate ? -1 : (a.dueDate > b.dueDate ? 1 : 0);
+  });
   if (state.commitSearch.trim()){
     const q = state.commitSearch.trim().toLowerCase();
     allRows = allRows.filter(c=>c.name.toLowerCase().includes(q));
