@@ -159,6 +159,7 @@ tbody tr:hover td { background:var(--surface-2); }
 .monthly-table tr.gap-row td { background:var(--deficit-dim); }
 .monthly-table .this-month { color:var(--brass); font-weight:700; }
 .monthly-table .td-note { display:inline-block; margin-inline-start:6px; font-size:10px; color:var(--muted-2); background:var(--surface-3); border-radius:4px; padding:1px 6px; }
+tr.month-group-header td { background:var(--brass-dim); color:var(--brass); font-weight:700; font-size:13px; padding:10px 12px; border-bottom:1px solid rgba(201,162,39,0.3); }
 
 .ledger-divider { border-top:3px double var(--line-strong); margin:24px 0; }
 .two-col { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
@@ -1935,6 +1936,7 @@ function renderCommitTable(){
   if (state.commitPage < 0) state.commitPage = 0;
   const rows = allRows.slice(state.commitPage*PAGE_SIZE, (state.commitPage+1)*PAGE_SIZE);
 
+  let lastMonthKey = null;
   tbody.innerHTML = rows.map(c=>{
     const st = commitStatus(c);
     const checked = state.selectedCommitIds.has(c.id) ? 'checked' : '';
@@ -1943,7 +1945,18 @@ function renderCommitTable(){
     const approvedCount = approvalProgressCount(approvals, c.totalAmount);
     const fullyApproved = isFullyApproved(approvals, c.totalAmount);
     const days = daysBetween(c.requestDate, c.dueDate);
-    return `<tr>
+    const monthKey = isSaneDate(c.dueDate) ? c.dueDate.slice(0,7) : '__nodate__';
+    let groupHeaderHtml = '';
+    if (monthKey !== lastMonthKey){
+      lastMonthKey = monthKey;
+      const monthCommits = rows.filter(r=>(isSaneDate(r.dueDate) ? r.dueDate.slice(0,7) : '__nodate__')===monthKey);
+      const monthSum = monthCommits.reduce((s,r)=>s+r.remainingAmount,0);
+      let monthLabel;
+      if (monthKey==='__nodate__') monthLabel = '⚠️ بدون تاريخ استحقاق صحيح';
+      else { const [y,m]=monthKey.split('-'); monthLabel = `📅 ${MONTHS_AR[parseInt(m,10)-1]} ${y}`; }
+      groupHeaderHtml = `<tr class="month-group-header"><td colspan="13">${monthLabel} <span class="td-note" style="margin-inline-start:10px; display:inline-block;">${monthCommits.length} التزام — إجمالي المتبقي: ${fmtMoney(monthSum)} ج.م</span></td></tr>`;
+    }
+    return groupHeaderHtml + `<tr>
       <td><input type="checkbox" class="commit-checkbox" data-id="${c.id}" ${checked} /></td>
       <td>${escapeHtml(c.name)}${c.requestNumber?`<div class="td-note">رقم طلب الالتزام: ${escapeHtml(c.requestNumber)}</div>`:''}${c.paymentRequestNumber?`<div class="td-note">رقم طلب الدفع: ${escapeHtml(c.paymentRequestNumber)}</div>`:''}${c.notes?`<div class="td-note">${escapeHtml(c.notes)}</div>`:''}${(c.attachments&&c.attachments.length)?`<div class="td-note">📎 ${c.attachments.length} مرفق</div>`:''}</td>
       <td><select class="company-select" data-id="${c.id}">${optionsHtml(COMPANIES, c.company||COMPANIES[0])}</select></td>
