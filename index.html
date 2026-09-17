@@ -153,7 +153,7 @@ tbody tr:hover td { background:var(--surface-2); }
 .gap-card-min b { color:var(--deficit); font-family:'IBM Plex Mono',monospace; }
 .monthly-table { width:100%; border-collapse:collapse; font-size:12.5px; table-layout:fixed; border:1px solid var(--line-strong); }
 .monthly-table th { text-align:right; color:var(--muted); font-weight:600; font-size:11px; padding:9px 10px; border-bottom:1px solid var(--line-strong); border-inline-start:1px solid var(--line); background:var(--surface-2); }
-.monthly-table th:first-child, .monthly-table td:first-child { border-inline-start:none; width:26%; }
+.monthly-table th:first-child, .monthly-table td:first-child { border-inline-start:none; width:18%; }
 .monthly-table td { padding:9px 10px; border-bottom:1px solid var(--line); border-inline-start:1px solid var(--line); vertical-align:middle; }
 .monthly-table tr:last-child td { border-bottom:none; }
 .monthly-table tr.gap-row td { background:var(--deficit-dim); }
@@ -1510,10 +1510,8 @@ function isConfirmedInflow(f){ return (f.certainty||'مؤكد')==='مؤكد'; }
 function totals(){
   const totalRemainingCommit = state.commitments.reduce((s,c)=>s+Math.max(0,c.remainingAmount),0);
   const totalRemainingInflow = state.inflows.reduce((s,f)=>s+(f.remainingAmount>0 && isSaneDate(f.expectedDate) && isConfirmedInflow(f) ? f.remainingAmount : 0),0);
-  // السدادات والتحصيلات اللي متسجّلاش من حساب بنك/خزينة (خارج البنوك والخزائن) بتتخصم/بتتضاف للالتزام بس مبتأثرش على الرصيد الفعلي المتاح
-  const totalPaid = state.transactions.filter(t=>t.kind==='سداد' && t.accountId).reduce((s,t)=>s+t.amount,0);
-  const totalCollected = state.transactions.filter(t=>t.kind==='تحصيل' && t.accountId).reduce((s,t)=>s+t.amount,0);
-  const cashBalance = totalOpeningBalance() + totalCollected - totalPaid;
+  // الرصيد الفعلي = مجموع الرصيد الحالي لكل حساب بنك/خزينة بس (متضمنًا أي تعديلات يدوية)
+  const cashBalance = accounts.reduce((s,a)=>s+accountCurrentBalance(a.id), 0);
   return { totalRemainingCommit, totalRemainingInflow, cashBalance };
 }
 
@@ -1778,7 +1776,7 @@ function renderMonthlyAnalysis(){
   const box = document.getElementById('monthlyAnalysisBox');
   if (!box) return;
   const buckets = {};
-  const ensureBucket = key => { if (!buckets[key]) buckets[key] = { expenses:0, collections:0 }; return buckets[key]; };
+  const ensureBucket = key => { if (!buckets[key]) buckets[key] = { expenses:0, collections:0, paid:0, remaining:0 }; return buckets[key]; };
   const thisMonthKey = todayStr().slice(0,7);
 
   // الشهور اللي فاتت: أرقام فعلية حقيقية من سجل الحركة (اللي اتسدد/اتحصّل فعلاً)
@@ -1802,6 +1800,15 @@ function renderMonthlyAnalysis(){
     }
   });
 
+  // المسدد والمتبقي: بيتحسبوا من كل الالتزامات المستحقة في كل شهر (بغض النظر عن ماضي/مستقبل)
+  state.commitments.forEach(c=>{
+    if (isSaneDate(c.dueDate)){
+      const b = ensureBucket(c.dueDate.slice(0,7));
+      b.paid += Math.max(0, c.totalAmount - c.remainingAmount);
+      b.remaining += Math.max(0, c.remainingAmount);
+    }
+  });
+
   const keys = Object.keys(buckets).sort();
   if (!keys.length){
     box.innerHTML = '<p class="empty" style="padding:14px 0;">لا توجد بيانات كافية لعرض التحليل الشهري بعد.</p>';
@@ -1817,6 +1824,8 @@ function renderMonthlyAnalysis(){
     return `<tr class="${hasGap?'gap-row':''}">
       <td class="${key===thisMonthKey?'this-month':''}">${label}${key===thisMonthKey?' (الشهر الحالي)':''}<span class="td-note">${isPast?'فعلي':'متوقع'}</span></td>
       <td class="num neg">${fmtMoney(b.expenses)}</td>
+      <td class="num pos">${fmtMoney(b.paid)}</td>
+      <td class="num ${b.remaining>0?'neg':''}">${fmtMoney(b.remaining)}</td>
       <td class="num pos">${fmtMoney(b.collections)}</td>
       <td class="num ${hasGap?'neg':''}">${hasGap ? fmtMoney(gap) : '—'}</td>
     </tr>`;
@@ -1824,11 +1833,11 @@ function renderMonthlyAnalysis(){
   box.innerHTML = `
     <div class="table-wrap">
       <table class="monthly-table">
-        <thead><tr><th>الشهر</th><th>إجمالي المصروفات</th><th>إجمالي التحصيلات</th><th>الفجوة (لو موجودة)</th></tr></thead>
+        <thead><tr><th>الشهر</th><th>إجمالي المصروفات</th><th>المسدد</th><th>المتبقي</th><th>إجمالي التحصيلات</th><th>الفجوة (لو موجودة)</th></tr></thead>
         <tbody>${rowsHtml}</tbody>
       </table>
     </div>
-    <p class="panel-sub" style="margin-top:8px;">الشهور اللي فاتت = أرقام فعلية من سجل الحركة (اللي اتسدد واتحصّل بالفعل). الشهر الحالي وما بعده = أرقام متوقعة (المتبقي من الالتزامات والتحصيلات المخطط لها). الصفوف باللون الأحمر فيها فجوة تمويل (مصروفات أكتر من التحصيلات).</p>`;
+    <p class="panel-sub" style="margin-top:8px;">الشهور اللي فاتت = أرقام فعلية من سجل الحركة (اللي اتسدد واتحصّل بالفعل). الشهر الحالي وما بعده = أرقام متوقعة (المتبقي من الالتزامات والتحصيلات المخطط لها). "المسدد" و"المتبقي" بيوضحوا حالة سداد التزامات كل شهر لحد دلوقتي بغض النظر عن كونه فات أو لسه. الصفوف باللون الأحمر فيها فجوة تمويل (مصروفات أكتر من التحصيلات).</p>`;
 }
 
 function renderMiniLists(){
@@ -2177,12 +2186,17 @@ function renderLedger(){
         </span>
       </div>
       <table class="ledger-table"><tbody>
-        ${g.items.sort((a,b)=>a.date<b.date?1:-1).map(t=>`
+        ${g.items.sort((a,b)=>a.date<b.date?1:-1).map(t=>{
+          const badgeCls = t.kind==='تحصيل' ? 'st-done' : t.kind==='تعديل' ? 'st-due' : 'st-late';
+          const isAdj = t.kind==='تعديل';
+          const sign = isAdj ? (t.amount>=0?'+':'−') : (t.kind==='تحصيل'?'+':'−');
+          const amtCls = isAdj ? (t.amount>=0?'pos':'neg') : (t.kind==='تحصيل'?'pos':'neg');
+          return `
           <tr>
             <td class="ledger-date">${fmtDateLabel(t.date)}</td>
-            <td><span class="badge ${t.kind==='تحصيل'?'st-done':'st-late'}">${t.kind}</span></td>
+            <td><span class="badge ${badgeCls}">${t.kind}</span></td>
             <td>${escapeHtml(t.refName)}${t.accountId ? `<div class="td-note">${accountIcon((accounts.find(a=>a.id===t.accountId)||{}).type)} ${escapeHtml((accounts.find(a=>a.id===t.accountId)||{}).name||'حساب محذوف')}</div>` : ''}${t.dollarDifference?`<div class="td-note">فرق دولار: ${fmtMoney(t.dollarDifference)}</div>`:''}${t.discount?`<div class="td-note">خصم: ${fmtMoney(t.discount)}</div>`:''}</td>
-            <td class="num ${t.kind==='تحصيل'?'pos':'neg'}">${t.kind==='تحصيل'?'+':'−'}${fmtMoney(t.amount)}${(t.dollarDifference||t.discount)?`<div class="td-note" style="direction:rtl;">إجمالي التسوية: ${fmtMoney(t.amount+(t.dollarDifference||0)+(t.discount||0))}</div>`:''}</td>
+            <td class="num ${amtCls}">${sign}${fmtMoney(Math.abs(t.amount))}${(t.dollarDifference||t.discount)?`<div class="td-note" style="direction:rtl;">إجمالي التسوية: ${fmtMoney(t.amount+(t.dollarDifference||0)+(t.discount||0))}</div>`:''}</td>
             <td class="actions">
               <button class="btn-mini txn-edit-toggle" data-id="${t.id}">تعديل</button>
               <button class="btn-mini btn-danger txn-delete" data-id="${t.id}">حذف</button>
@@ -2199,7 +2213,8 @@ function renderLedger(){
                 <button class="btn-mini txn-edit-cancel" data-id="${t.id}">إلغاء</button>
               </div>
             </td>
-          </tr>`).join('')}
+          </tr>`;
+        }).join('')}
       </tbody></table>
     </div>`).join('');
 }
@@ -2328,7 +2343,9 @@ function accountCurrentBalance(accountId){
   let bal = Number(acc.balance)||0;
   state.transactions.forEach(t=>{
     if (t.accountId === accountId){
-      bal += (t.kind==='تحصيل') ? t.amount : -t.amount;
+      if (t.kind==='تحصيل') bal += t.amount;
+      else if (t.kind==='سداد') bal -= t.amount;
+      else if (t.kind==='تعديل') bal += t.amount; // تعديل مباشر للرصيد (موجب أو سالب)
     }
   });
   return bal;
@@ -2347,7 +2364,8 @@ function renderAccountsTable(){
         <td class="num">${fmtMoney(a.balance)}</td>
         <td class="num ${current<0?'neg':'pos'}">${fmtMoney(current)}</td>
         <td class="actions">
-          <button class="btn-mini edit-toggle-account" data-id="${a.id}">تعديل</button>
+          <button class="btn-mini adjust-account-balance" data-id="${a.id}">✏️ تعديل الرصيد الحالي</button>
+          <button class="btn-mini edit-toggle-account" data-id="${a.id}">تعديل البيانات</button>
           <button class="btn-mini btn-danger del-account" data-id="${a.id}">حذف</button>
         </td>
       </tr>
@@ -2374,7 +2392,24 @@ function renderAccountsTable(){
 }
 document.getElementById('accountsTbody').addEventListener('click', e=>{
   const t = e.target;
-  if (t.classList.contains('del-account')){
+  if (t.classList.contains('adjust-account-balance')){
+    const id = t.dataset.id;
+    const acc = accounts.find(a=>a.id===id);
+    if (!acc) return;
+    const current = accountCurrentBalance(id);
+    const input = prompt(`الرصيد الحالي لحساب "${acc.name}" دلوقتي: ${fmtMoney(current)} ج.م\n\nاكتب الرصيد الصحيح المفروض يكون عليه الحساب:`, current);
+    if (input===null) return;
+    const newBalance = parseFloat(input);
+    if (isNaN(newBalance)){ alert('اكتب رقم صحيح.'); return; }
+    const delta = +(newBalance - current).toFixed(2);
+    if (delta === 0){ showToast('الرصيد بالفعل مظبوط، مفيش حاجة اتغيّرت.', 'info'); return; }
+    const adjId = uid();
+    state.transactions.push({ id: adjId, kind:'تعديل', refId:null, refName:`تعديل يدوي لرصيد ${acc.name}`, amount: delta, date: todayStr(), accountId: id });
+    markLocalAction(adjId);
+    persistAndRenderData('transactions');
+    renderAccountsTable();
+    showToast(`✅ اتعدّل رصيد "${acc.name}" ليبقى ${fmtMoney(newBalance)} ج.م (فرق تسوية: ${delta>0?'+':''}${fmtMoney(delta)})`, 'success');
+  } else if (t.classList.contains('del-account')){
     if (!confirm('متأكد إنك عايز تحذف الحساب ده؟ العمليات المرتبطة بيه هتفضل مسجلة بس مش هتتحسب في رصيده.')) return;
     accounts = accounts.filter(a=>a.id!==t.dataset.id);
     saveAccounts();
