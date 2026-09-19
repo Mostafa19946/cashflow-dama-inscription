@@ -2073,7 +2073,15 @@ function renderCommitTable(){
 }
 
 function getFilteredInflows(){
-  let allRows = state.inflows.slice().sort((a,b)=>a.expectedDate<b.expectedDate?-1:1);
+  let allRows = state.inflows.slice().sort((a,b)=>{
+    const monthA = isSaneDate(a.expectedDate) ? a.expectedDate.slice(0,7) : '';
+    const monthB = isSaneDate(b.expectedDate) ? b.expectedDate.slice(0,7) : '';
+    if (monthA !== monthB) return monthA < monthB ? -1 : 1;
+    const doneA = a.remainingAmount<=0 ? 1 : 0;
+    const doneB = b.remainingAmount<=0 ? 1 : 0;
+    if (doneA !== doneB) return doneA - doneB; // غير المحصّلة الأول، المحصّلة آخر القايمة في نفس الشهر
+    return a.expectedDate < b.expectedDate ? -1 : (a.expectedDate > b.expectedDate ? 1 : 0);
+  });
   if (state.inflowSearch.trim()){
     const q = state.inflowSearch.trim().toLowerCase();
     allRows = allRows.filter(f=>f.name.toLowerCase().includes(q));
@@ -2117,11 +2125,23 @@ function renderInflowTable(){
   if (state.inflowPage < 0) state.inflowPage = 0;
   const rows = allRows.slice(state.inflowPage*PAGE_SIZE, (state.inflowPage+1)*PAGE_SIZE);
 
+  let lastInflowMonthKey = null;
   tbody.innerHTML = rows.map(f=>{
     const st = inflowStatus(f);
     const checked = state.selectedInflowIds.has(f.id) ? 'checked' : '';
     const certainty = f.certainty || 'مؤكد';
-    return `<tr>
+    const monthKey = isSaneDate(f.expectedDate) ? f.expectedDate.slice(0,7) : '__nodate__';
+    let groupHeaderHtml = '';
+    if (monthKey !== lastInflowMonthKey){
+      lastInflowMonthKey = monthKey;
+      const monthInflows = rows.filter(r=>(isSaneDate(r.expectedDate) ? r.expectedDate.slice(0,7) : '__nodate__')===monthKey);
+      const monthSum = monthInflows.reduce((s,r)=>s+r.remainingAmount,0);
+      let monthLabel;
+      if (monthKey==='__nodate__') monthLabel = '⚠️ بدون تاريخ متوقع صحيح';
+      else { const [y,m]=monthKey.split('-'); monthLabel = `📅 ${MONTHS_AR[parseInt(m,10)-1]} ${y}`; }
+      groupHeaderHtml = `<tr class="month-group-header"><td colspan="9">${monthLabel} <span class="td-note" style="margin-inline-start:10px; display:inline-block;">${monthInflows.length} تحصيل — إجمالي المتبقي: ${fmtMoney(monthSum)} ج.م</span> <button type="button" class="btn-mini select-inflow-month-group" data-month="${monthKey}" style="margin-inline-start:10px; padding:2px 10px; font-size:10.5px;">☑️ تحديد كل تحصيلات الشهر ده بس</button></td></tr>`;
+    }
+    return groupHeaderHtml + `<tr>
       <td><input type="checkbox" class="inflow-checkbox" data-id="${f.id}" ${checked} /></td>
       <td>${escapeHtml(f.name)}${f.notes?`<div class="td-note">${escapeHtml(f.notes)}</div>`:''}</td>
       <td>${escapeHtml(f.source)||'—'}</td>
@@ -2793,7 +2813,14 @@ document.getElementById('bulkApplyCompany').addEventListener('click', ()=>{
 
 document.getElementById('inflowTbody').addEventListener('click', e=>{
   const t = e.target;
-  if (t.classList.contains('collect-toggle')){
+  if (t.classList.contains('select-inflow-month-group')){
+    const monthKey = t.dataset.month;
+    const groupItems = getFilteredInflows().filter(f=>(isSaneDate(f.expectedDate) ? f.expectedDate.slice(0,7) : '__nodate__')===monthKey);
+    state.selectedInflowIds.clear();
+    groupItems.forEach(f=>state.selectedInflowIds.add(f.id));
+    renderInflowTable();
+    showToast(`✅ اتحدد ${groupItems.length} تحصيل من نفس الشهر بس. أي تعديل جماعي دلوقتي هيطبّق عليهم بس.`, 'success');
+  } else if (t.classList.contains('collect-toggle')){
     document.getElementById('collectrow-'+t.dataset.id).classList.toggle('hidden');
   } else if (t.classList.contains('del-inflow')){
     if (!confirm('متأكد إنك عايز تحذف التدفق ده؟')) return;
