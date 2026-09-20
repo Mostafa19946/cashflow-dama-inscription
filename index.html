@@ -1211,21 +1211,44 @@ async function deleteAttachmentFromAirtable(commitId, attachmentId){
 async function loadFromAirtable(tableKey){
   try {
     const records = await airtableListAll(tableKey);
+    // لو نفس الـLocalId اتكرر (بسبب فشل حذف قديم بعد تعديل)، بناخد بس أحدث نسخة (حسب وقت الإنشاء)
+    const byLocalId = new Map();
+    records.forEach(rec=>{
+      const item0 = fromAirtableRecord(tableKey, rec);
+      const localId0 = tableKey==='customTypes' ? item0 : (item0 && item0.id);
+      if (!localId0) return;
+      const existing = byLocalId.get(localId0);
+      if (!existing || new Date(rec.createdTime) > new Date(existing.rec.createdTime)){
+        if (existing) staleDuplicateIds.add(existing.rec.id); // نسخة قديمة زيادة، هنحاول نمسحها في الخلفية
+        byLocalId.set(localId0, { rec, item: item0 });
+      } else {
+        staleDuplicateIds.add(rec.id);
+      }
+    });
     const idx = new Map();
-    const items = records.map(rec=>{
-      const item = fromAirtableRecord(tableKey, rec);
+    const items = [];
+    byLocalId.forEach(({rec, item})=>{
       const localId = tableKey==='customTypes' ? item : item.id;
       const normalizedFields = toAirtableRecord(tableKey, item);
       idx.set(localId, { recordId: rec.id, fieldsJSON: JSON.stringify(normalizedFields) });
-      return item;
-    }).filter(it=>it!=null && (typeof it!=='object' || it.id));
+      items.push(item);
+    });
     airtableRecordIndex[tableKey] = idx;
+    cleanupStaleDuplicates(tableKey);
     return items;
   } catch(e){
     console.error('Airtable load failed:', tableKey, e);
     lastAirtableError = e;
     return null;
   }
+}
+let staleDuplicateIds = new Set();
+async function cleanupStaleDuplicates(tableKey){
+  if (!staleDuplicateIds.size) return;
+  const ids = Array.from(staleDuplicateIds);
+  staleDuplicateIds.clear();
+  try { await airtableBatchDelete(tableKey, ids); }
+  catch(e){ console.warn('تعذر تنظيف النسخ المكررة القديمة تلقائيًا (هتتجاهل في العرض على أي حال):', e && e.message); }
 }
 
 let syncInFlight = {};
