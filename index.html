@@ -2668,6 +2668,8 @@ document.getElementById('toggleAddCommit').addEventListener('click', ()=>{
   if (isOpening){
     document.getElementById('cRequestNumber').value = nextRequestNumber();
     document.getElementById('cPaymentRequestNumber').value = nextPaymentRequestNumber();
+    document.getElementById('cNewType').classList.add('hidden');
+    document.getElementById('cNewType').value = '';
   }
 });
 document.getElementById('cType').addEventListener('change', e=>{
@@ -2891,7 +2893,11 @@ document.getElementById('commitTbody').addEventListener('click', e=>{
 });
 document.getElementById('commitTbody').addEventListener('change', e=>{
   const t = e.target;
-  if (t.classList.contains('approval-check')){
+  if (t.classList.contains('edit-type')){
+    const id = t.dataset.id;
+    const newTypeInput = document.querySelector(`.edit-new-type[data-id="${id}"]`);
+    if (newTypeInput) newTypeInput.classList.toggle('hidden', t.value!=='__new__');
+  } else if (t.classList.contains('approval-check')){
     const id = t.dataset.id;
     const role = t.dataset.role;
     const c = state.commitments.find(c=>c.id===id);
