@@ -408,9 +408,9 @@ body.role-accountant .approval-check {
       <span class="stat-sub" id="statLateCommitSub">مبلغها 0</span>
     </div>
     <div class="stat-card clickable" id="cardDailyApproved" data-filter="dailyApproved">
-      <span class="stat-label">✅ معتمد للصرف اليوم</span>
+      <span class="stat-label">✅ معتمد للصرف</span>
       <span class="stat-value pos" id="statDailyApproved">0</span>
-      <span class="stat-sub" id="statDailyApprovedSub">اعتماد كامل (3 تواقيع) ومستحق النهاردة</span>
+      <span class="stat-sub" id="statDailyApprovedSub">اعتماد كامل ولسه مسدد</span>
     </div>
     <div class="stat-card clickable" id="cardTotalPaid" data-filter="paid">
       <span class="stat-label">💸 إجمالي المسدد من الالتزامات</span>
@@ -1702,10 +1702,10 @@ function renderStats(){
   document.getElementById('statLateCommitSub').textContent = 'مبلغها ' + fmtMoney(lateCommitSum);
   document.getElementById('statLateCommitCard').classList.toggle('stat-alert', lateCommitList.length>0);
 
-  const dailyApprovedSum = unpaid
-    .filter(c=>c.dueDate===today && isFullyApproved(c.approvals, c.totalAmount))
-    .reduce((s,c)=>s+c.remainingAmount,0);
+  const dailyApprovedList = unpaid.filter(c=>isFullyApproved(c.approvals, c.totalAmount));
+  const dailyApprovedSum = dailyApprovedList.reduce((s,c)=>s+c.remainingAmount,0);
   document.getElementById('statDailyApproved').textContent = fmtMoney(dailyApprovedSum);
+  document.getElementById('statDailyApprovedSub').textContent = `${dailyApprovedList.length} التزام معتمد بالكامل وجاهز للصرف`;
 
   const totalOriginal = state.commitments.reduce((s,c)=>s+c.totalAmount,0);
   const totalPaidCommit = state.commitments.reduce((s,c)=>s+(c.totalAmount-c.remainingAmount),0);
@@ -2050,7 +2050,7 @@ function getFilteredCommitments(){
     else if (f==='urgent') allRows = allRows.filter(c=>c.remainingAmount>0 && (c.urgency||'عادي')==='عاجل');
     else if (f==='deferred') allRows = allRows.filter(c=>c.remainingAmount>0 && (c.urgency||'عادي')==='مؤجل');
     else if (f==='late') allRows = allRows.filter(c=>isLateCommitment(c));
-    else if (f==='dailyApproved') allRows = allRows.filter(c=>c.remainingAmount>0 && c.dueDate===today && isFullyApproved(c.approvals, c.totalAmount));
+    else if (f==='dailyApproved') allRows = allRows.filter(c=>c.remainingAmount>0 && isFullyApproved(c.approvals, c.totalAmount));
     else if (f==='paid') allRows = allRows.filter(c=>c.remainingAmount<=0);
   }
   const af = state.commitAdvFilters;
@@ -2070,7 +2070,7 @@ function renderCommitTable(){
   let allRows = getFilteredCommitments();
   const filterLabels = {
     unpaid: 'الالتزامات غير المسددة', all: 'كل الالتزامات', urgent: 'الطلبات العاجلة',
-    deferred: 'الطلبات المؤجلة', late: 'الطلبات المتأخرة', dailyApproved: 'المعتمد للصرف اليوم',
+    deferred: 'الطلبات المؤجلة', late: 'الطلبات المتأخرة', dailyApproved: 'المعتمد للصرف',
     paid: 'الالتزامات المسددة بالكامل',
   };
   const banner = document.getElementById('commitFilterBanner');
