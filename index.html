@@ -160,6 +160,21 @@ tbody tr:hover td { background:var(--surface-2); }
 .monthly-table .this-month { color:var(--brass); font-weight:700; }
 .monthly-table .td-note { display:inline-block; margin-inline-start:6px; font-size:10px; color:var(--muted-2); background:var(--surface-3); border-radius:4px; padding:1px 6px; }
 tr.month-group-header td { background:var(--brass-dim); color:var(--brass); font-weight:700; font-size:13px; padding:10px 12px; border-bottom:1px solid rgba(201,162,39,0.3); }
+.report-period-btn { background:var(--surface-2); border:1px solid var(--line-strong); color:var(--muted); padding:8px 16px; font-size:13px; font-weight:600; cursor:pointer; border-radius:6px; font-family:'Tajawal',sans-serif; }
+.report-period-btn.active { background:var(--brass); color:#16211D; border-color:var(--brass); }
+.report-summary-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:12px; margin-bottom:20px; }
+.report-summary-cards .stat-card { margin:0; }
+.type-group { border:1px solid var(--line-strong); border-radius:10px; overflow:hidden; margin-bottom:10px; }
+.type-group-head { display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:var(--surface-2); cursor:pointer; font-weight:700; flex-wrap:wrap; gap:8px; }
+.type-group-head:hover { background:var(--surface-3); }
+.type-group-sums { display:flex; gap:16px; font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:400; }
+.type-group-body { display:none; }
+.type-group-body.open { display:block; }
+.type-group-body table { width:100%; font-size:12.5px; }
+.type-group-body td { padding:8px 14px; border-top:1px solid var(--line); }
+.report-monthly-table { width:100%; border-collapse:collapse; font-size:12.5px; margin-bottom:20px; }
+.report-monthly-table th, .report-monthly-table td { padding:8px 10px; border:1px solid var(--line-strong); text-align:right; }
+.report-monthly-table th { background:var(--surface-2); color:var(--muted); font-size:11px; }
 
 .ledger-divider { border-top:3px double var(--line-strong); margin:24px 0; }
 .two-col { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
@@ -427,6 +442,7 @@ body.role-accountant .certainty-select
     <button class="tab-btn" data-tab="commitments">الالتزامات</button>
     <button class="tab-btn" data-tab="inflows">التدفقات الداخلة</button>
     <button class="tab-btn" data-tab="ledger">سجل الحركة</button>
+    <button class="tab-btn" data-tab="reports">📊 التقارير</button>
     <button class="tab-btn hidden" data-tab="users" id="usersTabBtn">المستخدمين</button>
   </nav>
 
@@ -665,6 +681,30 @@ body.role-accountant .certainty-select
     <div class="ledger-divider"></div>
 
     <div class="ledger-groups" id="ledgerGroups"></div>
+  </section>
+
+  <section class="cf-panel hidden" id="panel-reports">
+    <div class="panel-head row-between">
+      <div>
+        <h2>📊 التقارير</h2>
+        <p class="panel-sub">ملخص الالتزامات مجمّعة بالنوع، والتحصيلات المتوقعة في نفس الفترة، والفجوة لو موجودة.</p>
+      </div>
+    </div>
+    <div class="period-switch" style="margin-top:14px;">
+      <button class="report-period-btn active" data-period="week">أسبوعي</button>
+      <button class="report-period-btn" data-period="month">شهري</button>
+      <button class="report-period-btn" data-period="quarter">ربع سنوي</button>
+    </div>
+    <div class="row-between" style="margin-top:14px; align-items:center;">
+      <button class="btn-mini" id="reportPrevBtn">‹ الفترة السابقة</button>
+      <h3 class="mini-head" id="reportRangeLabel" style="margin:0;"></h3>
+      <div class="btn-row">
+        <button class="btn-mini" id="reportTodayBtn">الفترة الحالية</button>
+        <button class="btn-mini" id="reportNextBtn">الفترة التالية ›</button>
+        <button class="btn-mini" id="printReportBtn">🖨️ طباعة التقرير</button>
+      </div>
+    </div>
+    <div id="reportContentBox" style="margin-top:18px;"></div>
   </section>
 
   <section class="cf-panel hidden" id="panel-users">
@@ -929,6 +969,41 @@ function urgencyClass(u){
 }
 
 function todayStr(){ const d=new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0,10); }
+function isoDate(d){ return d.toISOString().slice(0,10); }
+function getWeekRange(refDateStr){
+  const d = new Date(refDateStr); d.setHours(0,0,0,0);
+  const day = d.getDay();
+  const diffToMonday = day===0 ? -6 : 1-day;
+  const monday = new Date(d); monday.setDate(d.getDate()+diffToMonday);
+  const sunday = new Date(monday); sunday.setDate(monday.getDate()+6);
+  return { start: isoDate(monday), end: isoDate(sunday), label: `من ${fmtDateLabel(isoDate(monday))} إلى ${fmtDateLabel(isoDate(sunday))}` };
+}
+function getMonthRange(refDateStr){
+  const d = new Date(refDateStr);
+  const start = new Date(d.getFullYear(), d.getMonth(), 1);
+  const end = new Date(d.getFullYear(), d.getMonth()+1, 0);
+  return { start: isoDate(start), end: isoDate(end), label: `${MONTHS_AR[d.getMonth()]} ${d.getFullYear()}` };
+}
+function getQuarterRange(refDateStr){
+  const d = new Date(refDateStr);
+  const q = Math.floor(d.getMonth()/3);
+  const start = new Date(d.getFullYear(), q*3, 1);
+  const end = new Date(d.getFullYear(), q*3+3, 0);
+  return { start: isoDate(start), end: isoDate(end), label: `الربع ${q+1} — ${MONTHS_AR[q*3]} إلى ${MONTHS_AR[q*3+2]} ${d.getFullYear()}` };
+}
+function getReportRange(){
+  if (state.reportPeriodType==='week') return getWeekRange(state.reportRefDate);
+  if (state.reportPeriodType==='quarter') return getQuarterRange(state.reportRefDate);
+  return getMonthRange(state.reportRefDate);
+}
+function shiftReportRefDate(dir){
+  const d = new Date(state.reportRefDate);
+  if (state.reportPeriodType==='week') d.setDate(d.getDate() + dir*7);
+  else if (state.reportPeriodType==='quarter') d.setMonth(d.getMonth() + dir*3);
+  else d.setMonth(d.getMonth() + dir);
+  state.reportRefDate = isoDate(d);
+}
+
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
 function fmtMoney(n){ const v=Number(n)||0; return v.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0}); }
 function pad2(n){ return String(n).padStart(2,'0'); }
@@ -1283,6 +1358,9 @@ let state = {
   inflowCategoryFilter: null,
   commitAdvFilters: { company:'', type:'', urgency:'', status:'', dueFrom:'', dueTo:'', minRem:'', maxRem:'' },
   inflowAdvFilters: { certainty:'', status:'', source:'', dateFrom:'', dateTo:'', minRem:'', maxRem:'' },
+  reportPeriodType: 'week',
+  reportRefDate: todayStr(),
+  reportOpenTypes: new Set(),
 };
 
 let accounts = load('accounts', []);
@@ -1772,6 +1850,95 @@ function renderGapPeriodsList(periods){
           <div class="gap-card-min">أعمق نقطة: <b>${fmtMoney(p.minBalance)}</b> ج.م بتاريخ ${fmtDateLabel(p.minDate)}</div>
         </div>`).join('')}
     </div>`;
+}
+
+function renderReportsTab(){
+  const box = document.getElementById('reportContentBox');
+  if (!box) return;
+  const range = getReportRange();
+  document.getElementById('reportRangeLabel').textContent = range.label;
+
+  const commitsInRange = state.commitments.filter(c=>isSaneDate(c.dueDate) && c.dueDate>=range.start && c.dueDate<=range.end);
+  const inflowsInRange = state.inflows.filter(f=>isSaneDate(f.expectedDate) && f.expectedDate>=range.start && f.expectedDate<=range.end);
+
+  const grandTotal = commitsInRange.reduce((s,c)=>s+c.totalAmount,0);
+  const grandPaid = commitsInRange.reduce((s,c)=>s+Math.max(0,c.totalAmount-c.remainingAmount),0);
+  const grandRemaining = commitsInRange.reduce((s,c)=>s+Math.max(0,c.remainingAmount),0);
+  const totalInflow = inflowsInRange.reduce((s,f)=>s+f.expectedAmount,0);
+  const gap = grandTotal - totalInflow;
+
+  // تجميع الالتزامات حسب النوع
+  const byType = {};
+  commitsInRange.forEach(c=>{
+    const key = c.type || 'أخرى';
+    if (!byType[key]) byType[key] = { items:[], total:0, paid:0, remaining:0 };
+    byType[key].items.push(c);
+    byType[key].total += c.totalAmount;
+    byType[key].paid += Math.max(0,c.totalAmount-c.remainingAmount);
+    byType[key].remaining += Math.max(0,c.remainingAmount);
+  });
+  const typeKeys = Object.keys(byType).sort((a,b)=>byType[b].total-byType[a].total);
+
+  // تفصيل شهري (مفيد خصوصًا للربع سنوي اللي بيغطي أكتر من شهر)
+  const monthBuckets = {};
+  commitsInRange.forEach(c=>{
+    const mk = c.dueDate.slice(0,7);
+    if (!monthBuckets[mk]) monthBuckets[mk] = { total:0, paid:0, remaining:0, collections:0 };
+    monthBuckets[mk].total += c.totalAmount;
+    monthBuckets[mk].paid += Math.max(0,c.totalAmount-c.remainingAmount);
+    monthBuckets[mk].remaining += Math.max(0,c.remainingAmount);
+  });
+  inflowsInRange.forEach(f=>{
+    const mk = f.expectedDate.slice(0,7);
+    if (!monthBuckets[mk]) monthBuckets[mk] = { total:0, paid:0, remaining:0, collections:0 };
+    monthBuckets[mk].collections += f.expectedAmount;
+  });
+  const monthKeys = Object.keys(monthBuckets).sort();
+
+  const summaryHtml = `
+    <div class="report-summary-cards">
+      <div class="stat-card"><span class="stat-label">🧾 إجمالي الالتزامات</span><span class="stat-value">${fmtMoney(grandTotal)}</span><span class="stat-sub">${commitsInRange.length} بند</span></div>
+      <div class="stat-card"><span class="stat-label">💸 المسدد</span><span class="stat-value pos">${fmtMoney(grandPaid)}</span></div>
+      <div class="stat-card"><span class="stat-label">📋 المتبقي</span><span class="stat-value neg">${fmtMoney(grandRemaining)}</span></div>
+      <div class="stat-card"><span class="stat-label">📥 إجمالي التحصيلات المتوقعة</span><span class="stat-value pos">${fmtMoney(totalInflow)}</span><span class="stat-sub">${inflowsInRange.length} بند</span></div>
+      <div class="stat-card ${gap>0?'stat-alert':''}"><span class="stat-label">⚠️ الفجوة</span><span class="stat-value ${gap>0?'neg':'pos'}">${gap>0?fmtMoney(gap):'لا توجد'}</span></div>
+    </div>`;
+
+  const monthlyHtml = monthKeys.length>1 ? `
+    <h3 class="mini-head">التفصيل الشهري داخل الفترة</h3>
+    <table class="report-monthly-table">
+      <thead><tr><th>الشهر</th><th>إجمالي الالتزامات</th><th>المسدد</th><th>المتبقي</th><th>التحصيلات المتوقعة</th></tr></thead>
+      <tbody>${monthKeys.map(mk=>{
+        const b = monthBuckets[mk];
+        const [y,m] = mk.split('-');
+        return `<tr><td>${MONTHS_AR[parseInt(m,10)-1]} ${y}</td><td class="num">${fmtMoney(b.total)}</td><td class="num pos">${fmtMoney(b.paid)}</td><td class="num neg">${fmtMoney(b.remaining)}</td><td class="num pos">${fmtMoney(b.collections)}</td></tr>`;
+      }).join('')}</tbody>
+    </table>` : '';
+
+  const typesHtml = !typeKeys.length ? '<p class="empty" style="padding:16px 0;">لا توجد التزامات مستحقة في الفترة دي.</p>' : `
+    <h3 class="mini-head">الالتزامات مجمّعة بالنوع (اضغط على أي نوع لعرض التفاصيل)</h3>
+    ${typeKeys.map(type=>{
+      const b = byType[type];
+      const isOpen = state.reportOpenTypes.has(type);
+      return `<div class="type-group">
+        <div class="type-group-head report-type-toggle" data-type="${escapeAttr(type)}">
+          <span>${isOpen?'▼':'◀'} ${escapeHtml(type)} <span class="td-note">${b.items.length} التزام</span></span>
+          <span class="type-group-sums">
+            <span>الإجمالي: ${fmtMoney(b.total)}</span>
+            <span class="pos">المسدد: ${fmtMoney(b.paid)}</span>
+            <span class="neg">المتبقي: ${fmtMoney(b.remaining)}</span>
+          </span>
+        </div>
+        <div class="type-group-body ${isOpen?'open':''}">
+          <table>
+            <thead><tr><th>الاسم</th><th>الشركة</th><th>الاستحقاق</th><th>الإجمالي</th><th>المتبقي</th><th>الحالة</th></tr></thead>
+            <tbody>${b.items.sort((a,b2)=>a.dueDate<b2.dueDate?-1:1).map(c=>`<tr><td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.company||'—')}</td><td>${fmtDateLabel(c.dueDate)}</td><td class="num">${fmtMoney(c.totalAmount)}</td><td class="num neg">${fmtMoney(c.remainingAmount)}</td><td>${escapeHtml(commitStatus(c).label)}</td></tr>`).join('')}</tbody>
+          </table>
+        </div>
+      </div>`;
+    }).join('')}`;
+
+  box.innerHTML = summaryHtml + monthlyHtml + typesHtml;
 }
 
 function renderMonthlyAnalysis(){
@@ -2355,6 +2522,7 @@ function renderAll(){
   renderCommitTable();
   renderInflowTable();
   renderLedger();
+  renderReportsTab();
   populateAccountSelects();
   if (currentUser && currentUser.role==='admin') renderUsersTable();
 }
@@ -2486,7 +2654,7 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
-    ['overview','commitments','inflows','ledger','users'].forEach(t=>{
+    ['overview','commitments','inflows','ledger','reports','users'].forEach(t=>{
       document.getElementById('panel-'+t).classList.toggle('hidden', t!==btn.dataset.tab);
     });
     state.tab = btn.dataset.tab;
@@ -2928,6 +3096,39 @@ document.getElementById('clearAllCommits').addEventListener('click', ()=>{
   persistAndRenderData('commitments');
 });
 document.getElementById('printCommitList').addEventListener('click', printCommitmentsList);
+
+document.querySelectorAll('.report-period-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.report-period-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    state.reportPeriodType = btn.dataset.period;
+    state.reportRefDate = todayStr();
+    renderReportsTab();
+  });
+});
+document.getElementById('reportPrevBtn').addEventListener('click', ()=>{ shiftReportRefDate(-1); renderReportsTab(); });
+document.getElementById('reportNextBtn').addEventListener('click', ()=>{ shiftReportRefDate(1); renderReportsTab(); });
+document.getElementById('reportTodayBtn').addEventListener('click', ()=>{ state.reportRefDate = todayStr(); renderReportsTab(); });
+document.getElementById('reportContentBox').addEventListener('click', e=>{
+  const head = e.target.closest('.report-type-toggle');
+  if (!head) return;
+  const type = head.dataset.type;
+  if (state.reportOpenTypes.has(type)) state.reportOpenTypes.delete(type);
+  else state.reportOpenTypes.add(type);
+  renderReportsTab();
+});
+document.getElementById('printReportBtn').addEventListener('click', ()=>{
+  const range = getReportRange();
+  const periodLabelAr = state.reportPeriodType==='week' ? 'أسبوعي' : state.reportPeriodType==='quarter' ? 'ربع سنوي' : 'شهري';
+  const html = `<div class="print-doc">
+    ${printLogosHtml()}
+    <h1>تقرير ${periodLabelAr}</h1>
+    <p class="print-sub">${range.label} — تاريخ الطباعة: ${fmtDateLabel(todayStr())}</p>
+    ${document.getElementById('reportContentBox').innerHTML.replace(/<button[^>]*>.*?<\/button>/g,'').replace(/class="type-group-body"/g,'class="type-group-body open"')}
+  </div>`;
+  doPrint(html);
+});
+
 document.getElementById('exportCommitExcel').addEventListener('click', ()=>{
   const rows = getFilteredCommitments();
   if (!rows.length){ alert('مفيش التزامات لتصديرها.'); return; }
@@ -3046,7 +3247,7 @@ document.querySelectorAll('.stat-card.clickable[data-filter]').forEach(card=>{
     document.getElementById('commitAdvFilters').classList.add('hidden');
     document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
     document.querySelector('.tab-btn[data-tab="commitments"]').classList.add('active');
-    ['overview','commitments','inflows','ledger','users'].forEach(t=>{
+    ['overview','commitments','inflows','ledger','reports','users'].forEach(t=>{
       document.getElementById('panel-'+t).classList.toggle('hidden', t!=='commitments');
     });
     state.tab = 'commitments';
@@ -3065,7 +3266,7 @@ document.querySelectorAll('.stat-card.clickable[data-inflow-filter]').forEach(ca
     state.inflowPage = 0;
     document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
     document.querySelector('.tab-btn[data-tab="inflows"]').classList.add('active');
-    ['overview','commitments','inflows','ledger','users'].forEach(t=>{
+    ['overview','commitments','inflows','ledger','reports','users'].forEach(t=>{
       document.getElementById('panel-'+t).classList.toggle('hidden', t!=='inflows');
     });
     state.tab = 'inflows';
@@ -3081,7 +3282,7 @@ document.getElementById('clearInflowFilter').addEventListener('click', ()=>{
 document.getElementById('statGapCard').addEventListener('click', ()=>{
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
   document.querySelector('.tab-btn[data-tab="overview"]').classList.add('active');
-  ['overview','commitments','inflows','ledger','users'].forEach(t=>{
+  ['overview','commitments','inflows','ledger','reports','users'].forEach(t=>{
     document.getElementById('panel-'+t).classList.toggle('hidden', t!=='overview');
   });
   state.tab = 'overview';
