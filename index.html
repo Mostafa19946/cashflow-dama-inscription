@@ -220,29 +220,11 @@ tr.month-group-header td { background:var(--brass-dim); color:var(--brass); font
 .logout-btn { background:none; border:1px solid var(--line-strong); color:var(--muted); border-radius:6px; padding:5px 11px; font-size:11.5px; cursor:pointer; }
 .logout-btn:hover { border-color:var(--deficit); color:var(--deficit); }
 
-/* صلاحيات المحاسب: طلب دفع (إضافة التزام) + تسجيل تحصيل فقط */
-body.role-accountant .tab-btn[data-tab="ledger"],
-body.role-accountant #toggleImportCommit,
-body.role-accountant #clearAllCommits,
-body.role-accountant #bulkBarCommit,
-body.role-accountant #commitSelectAll,
-body.role-accountant .commit-checkbox,
-body.role-accountant .edit-toggle-commit,
-body.role-accountant .del-commit,
-body.role-accountant .pay-toggle,
-body.role-accountant .approval-toggle,
-body.role-accountant #toggleAddInflow,
-body.role-accountant #toggleImportInflow,
-body.role-accountant #clearAllInflows,
-body.role-accountant #bulkBarInflow,
-body.role-accountant #inflowSelectAll,
-body.role-accountant .inflow-checkbox,
-body.role-accountant .edit-toggle-inflow,
-body.role-accountant .del-inflow
-{ display:none !important; }
-body.role-accountant .urgency-select,
-body.role-accountant .certainty-select
-{ pointer-events:none; background:var(--surface-2); opacity:0.75; }
+/* صلاحيات المحاسب: كل الصلاحيات (تعديل، حذف، استيراد، إدارة الحسابات، التقارير...) ما عدا اعتماد الالتزامات نفسه */
+body.role-accountant .approval-check {
+  pointer-events: none;
+  opacity: 0.5;
+}
 
 @media (max-width:900px) {
   .cf-stats { grid-template-columns:repeat(2,1fr); }
@@ -721,7 +703,7 @@ body.role-accountant .certainty-select
         <div class="f-field"><label>كلمة المرور</label><input type="text" id="uPassword" placeholder="اكتب كلمة مرور" /></div>
         <div class="f-field"><label>الاسم المعروض</label><input id="uDisplayName" placeholder="مثال: أحمد محمد" /></div>
         <div class="f-field"><label>نوع الصلاحية</label>
-          <select id="uRole"><option value="user">مستخدم عادي</option><option value="accountant">محاسب (طلب دفع + تسجيل تحصيل فقط)</option><option value="admin">مستخدم أساسي (Admin)</option></select>
+          <select id="uRole"><option value="user">مستخدم عادي</option><option value="accountant">محاسب (كل الصلاحيات ما عدا الاعتماد)</option><option value="admin">مستخدم أساسي (Admin)</option></select>
         </div>
         <div class="f-field"><label>دوره في سلسلة الاعتماد</label>
           <select id="uApprovalRole">
@@ -2902,6 +2884,11 @@ document.getElementById('commitTbody').addEventListener('change', e=>{
     const role = t.dataset.role;
     const c = state.commitments.find(c=>c.id===id);
     if (!c) return;
+    if (t.checked && currentUser.role==='accountant'){
+      alert('حساب "محاسب" مش عنده صلاحية اعتماد الالتزامات. الاعتماد متاح بس للأدمن أو صاحب دور الاعتماد المحدد.');
+      renderAll();
+      return;
+    }
     if (t.checked && currentUser.role!=='admin' && currentUser.approvalRole!==role){
       const roleObj = APPROVAL_ROLES.find(r=>r.key===role);
       alert(`الاعتماد ده مخصص لـ "${roleObj.label}" بس. إنت مسجل دخول كـ "${currentUser.displayName}" ومش عندك صلاحية الاعتماد ده.`);
@@ -3741,7 +3728,7 @@ function renderUsersTable(){
           <div class="f-field"><label>نوع الصلاحية</label>
             <select class="edit-user-role" data-id="${u.id}">
               <option value="user" ${u.role==='user'?'selected':''}>مستخدم عادي</option>
-              <option value="accountant" ${u.role==='accountant'?'selected':''}>محاسب (طلب دفع + تسجيل تحصيل فقط)</option>
+              <option value="accountant" ${u.role==='accountant'?'selected':''}>محاسب (كل الصلاحيات ما عدا الاعتماد)</option>
               <option value="admin" ${u.role==='admin'?'selected':''}>مستخدم أساسي (Admin)</option>
             </select>
           </div>
