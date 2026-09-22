@@ -308,6 +308,7 @@ body.role-accountant .approval-check {
         <span id="syncStatus" style="font-size:11px;">🔄 بيتزامن...</span>
         <span>مسجل دخول: <b id="currentUserName">—</b></span>
         <span class="role-tag" id="currentUserRoleTag">—</span>
+        <button class="logout-btn hidden" id="jsonbinSetupBtn" style="background:var(--brass); color:#16211D;">🔧 إعداد القاعدة الجديدة</button>
         <button class="logout-btn" id="openProfileBtn">✍️ توقيعي</button>
         <button class="logout-btn" id="logoutBtn">تسجيل خروج</button>
       </div>
@@ -1021,6 +1022,100 @@ const AIRTABLE_TABLE_IDS = {
 let airtableRecordIndex = {};
 Object.keys(AIRTABLE_TABLE_IDS).forEach(k=>{ airtableRecordIndex[k] = new Map(); });
 
+// ---- الإعداد الجديد: JSONBin (بديل Airtable — أبسط وأوثق) ----
+const JSONBIN_MASTER_KEY = '$2a$10$CLTxFFx9AbgIT5HRkWY53eAswH8tmWSqHKiqfi7EN1OO0.Q2oeOa.';
+const JSONBIN_IDS = {
+  commitments: '',
+  inflows: '',
+  transactions: '',
+  accounts: '',
+  users: '',
+  customTypes: '',
+};
+const JSONBIN_DEFAULTS = {
+  commitments: [],
+  inflows: [],
+  transactions: [],
+  accounts: [],
+  users: [{ id: 'admin-default', username: 'admin', password: 'admin123', displayName: 'المدير الأساسي', role: 'admin', approvalRole: '' }],
+  customTypes: [],
+};
+async function jsonbinCreate(name, initialData){
+  const res = await fetch('https://api.jsonbin.io/v3/b', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Master-Key': JSONBIN_MASTER_KEY,
+      'X-Bin-Name': name,
+      'X-Bin-Private': 'true',
+    },
+    body: JSON.stringify(initialData),
+  });
+  if (!res.ok) throw new Error('jsonbin create failed: '+res.status+' '+(await res.text()));
+  const data = await res.json();
+  return data.metadata.id;
+}
+async function jsonbinRead(binId){
+  const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
+    headers: { 'X-Master-Key': JSONBIN_MASTER_KEY },
+  });
+  if (!res.ok) throw new Error('jsonbin read failed: '+res.status+' '+(await res.text()));
+  const data = await res.json();
+  return data.record;
+}
+async function jsonbinWrite(binId, content){
+  const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_MASTER_KEY },
+    body: JSON.stringify(content),
+  });
+  if (!res.ok) throw new Error('jsonbin write failed: '+res.status+' '+(await res.text()));
+  return res.json();
+}
+async function jsonbinSetupAllBins(){
+  const results = {};
+  for (const key of Object.keys(JSONBIN_DEFAULTS)){
+    const id = await jsonbinCreate('cashflow_'+key, JSONBIN_DEFAULTS[key]);
+    results[key] = id;
+  }
+  return results;
+}
+async function loadFromJsonbin(tableKey){
+  try {
+    const binId = JSONBIN_IDS[tableKey];
+    if (!binId) return null;
+    const record = await jsonbinRead(binId);
+    return Array.isArray(record) ? record : [];
+  } catch(e){
+    console.error('JSONBin load failed:', tableKey, e);
+    lastAirtableError = e;
+    return null;
+  }
+}
+let jsonbinSyncInFlight = {};
+async function syncTableToJsonbin(tableKey, items){
+  const binId = JSONBIN_IDS[tableKey];
+  if (!binId) return; // لسه معملناش الإعداد الأول
+  if (jsonbinSyncInFlight[tableKey]) { jsonbinSyncInFlight[tableKey].pending = items; return; }
+  jsonbinSyncInFlight[tableKey] = { pending: null };
+  setSyncStatus('syncing');
+  try {
+    await jsonbinWrite(binId, items);
+    const again = jsonbinSyncInFlight[tableKey] && jsonbinSyncInFlight[tableKey].pending;
+    delete jsonbinSyncInFlight[tableKey];
+    if (again) return syncTableToJsonbin(tableKey, again);
+    setSyncStatus('ok');
+    showToast(`✅ تم حفظ التغيير في ${TABLE_LABELS_AR[tableKey]||tableKey}`, 'success');
+  } catch(e){
+    console.error('JSONBin sync failed', tableKey, e);
+    delete jsonbinSyncInFlight[tableKey];
+    setSyncStatus('error');
+    const reason = (e && e.message) ? e.message.slice(0,140) : '';
+    showToast(`❌ فشل حفظ التغيير في ${TABLE_LABELS_AR[tableKey]||tableKey}!${reason?(' (تفاصيل: '+reason+')'):''}`, 'error');
+  }
+}
+const USE_JSONBIN = Object.values(JSONBIN_IDS).every(v=>v);
+
 function toAirtableRecord(tableKey, obj){
   if (tableKey === 'commitments') return { LocalId: obj.id, Name: obj.name||'', Type: obj.type||'', Company: obj.company||'', TotalAmount: Number(obj.totalAmount)||0, RemainingAmount: Number(obj.remainingAmount)||0, DueDate: obj.dueDate||'', Recurrence: obj.recurrence||'', Notes: obj.notes||'', RequestNumber: obj.requestNumber||'', PaymentRequestNumber: obj.paymentRequestNumber||'', PaymentRequestDate: obj.paymentRequestDate||'', RequestDate: obj.requestDate||'', Urgency: obj.urgency||'', ApprovalsJSON: JSON.stringify(obj.approvals||{}), PaymentOrderNumber: obj.paymentOrderNumber||'', PaymentOrderDate: obj.paymentOrderDate||'', ApprovalSignaturesJSON: JSON.stringify(obj.approvalDetails||{}) };
   if (tableKey === 'inflows') return { LocalId: obj.id, Name: obj.name||'', Source: obj.source||'', ExpectedAmount: Number(obj.expectedAmount)||0, RemainingAmount: Number(obj.remainingAmount)||0, ExpectedDate: obj.expectedDate||'', Notes: obj.notes||'', Certainty: obj.certainty||'' };
@@ -1066,7 +1161,7 @@ function fromAirtableRecord(tableKey, rec){
   return null;
 }
 
-async function airtableApi(method, tableKey, qs, body, _isRetry){
+async function airtableApi(method, tableKey, qs, body, _isRetry, _rateLimitAttempt){
   const tblId = AIRTABLE_TABLE_IDS[tableKey];
   const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${tblId}${qs||''}`;
   const res = await fetch(url, {
@@ -1075,6 +1170,14 @@ async function airtableApi(method, tableKey, qs, body, _isRetry){
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok){
+    // تجاوز حد الطلبات (زحمة استخدام من أكتر من مستخدم في نفس الوقت) — ناخد لحظة ونعيد المحاولة تلقائيًا
+    if (res.status === 429){
+      const attempt = (_rateLimitAttempt||0) + 1;
+      if (attempt <= 5){
+        await new Promise(r=>setTimeout(r, 1000*attempt));
+        return airtableApi(method, tableKey, qs, body, _isRetry, attempt);
+      }
+    }
     const t = await res.text();
     const m = t.match(/Unknown field name:\s*"([^"]+)"/);
     if (m && body && Array.isArray(body.records)){
@@ -1343,7 +1446,8 @@ function setSyncStatus(status){
 
 function save(key, val){
   cacheLocal(key, val);
-  syncTableToAirtable(key, val);
+  if (USE_JSONBIN) syncTableToJsonbin(key, val);
+  else syncTableToAirtable(key, val);
 }
 
 let state = {
@@ -1467,7 +1571,7 @@ function startPolling(){
     if (!currentUser) return;
     if (isUserMidEdit()) return;
     hydrateAllFromAirtable(true);
-  }, 10000);
+  }, 20000);
 }
 
 // ---- التوقيع الشخصي ----
@@ -1517,6 +1621,37 @@ function loadUserSignatureLocal(userId){
 function saveUserSignatureLocal(userId, dataUrl){
   try { localStorage.setItem('cf_signature_'+userId, dataUrl||''); } catch(e){ console.error(e); }
 }
+document.getElementById('jsonbinSetupBtn').addEventListener('click', async ()=>{
+  if (!confirm('هيتم إنشاء القاعدة الجديدة على JSONBin ونقل كل بياناتك الحالية من Airtable ليها. الخطوة دي بتتعمل مرة واحدة بس. تكملي؟')) return;
+  const btn = document.getElementById('jsonbinSetupBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ جاري الإعداد...';
+  try {
+    showToast('🔧 جاري إنشاء الجداول الجديدة على JSONBin...', 'info');
+    const ids = await jsonbinSetupAllBins();
+    showToast('📦 جاري نقل البيانات الحالية من Airtable...', 'info');
+    for (const key of Object.keys(ids)){
+      let data;
+      if (key === 'commitments') data = state.commitments;
+      else if (key === 'inflows') data = state.inflows;
+      else if (key === 'transactions') data = state.transactions;
+      else if (key === 'accounts') data = accounts;
+      else if (key === 'users') data = users;
+      else if (key === 'customTypes') data = customTypes;
+      await jsonbinWrite(ids[key], data);
+    }
+    const summary = Object.entries(ids).map(([k,v])=>`${k}: ${v}`).join('\n');
+    btn.disabled = false;
+    btn.textContent = '🔧 إعداد القاعدة الجديدة';
+    alert('✅ تم إنشاء القاعدة الجديدة ونقل كل البيانات بنجاح!\n\nانسخي القائمة دي وابعتيها لي عشان أخلّص الإعداد:\n\n' + summary);
+    console.log('JSONBIN_IDS:', JSON.stringify(ids, null, 2));
+  } catch(e){
+    console.error(e);
+    btn.disabled = false;
+    btn.textContent = '🔧 إعداد القاعدة الجديدة';
+    alert('❌ حصل خطأ أثناء الإعداد: ' + (e && e.message ? e.message : 'خطأ غير معروف') + '\n\nجرّبي تاني، أو ابعتيلي وصف الخطأ ده.');
+  }
+});
 document.getElementById('openProfileBtn').addEventListener('click', ()=>{
   document.getElementById('profilePanel').classList.remove('hidden');
   document.getElementById('profilePanel').scrollIntoView({ behavior:'smooth', block:'start' });
@@ -1560,6 +1695,7 @@ async function showApp(){
   const roleObj = APPROVAL_ROLES.find(r=>r.key===currentUser.approvalRole);
   roleTag.textContent = currentUser.role==='admin' ? 'أدمن' : currentUser.role==='accountant' ? 'محاسب' : (roleObj ? roleObj.label : 'مستخدم');
   document.getElementById('usersTabBtn').classList.toggle('hidden', currentUser.role!=='admin');
+  document.getElementById('jsonbinSetupBtn').classList.toggle('hidden', !(currentUser.role==='admin' && !USE_JSONBIN));
   document.body.classList.toggle('role-accountant', currentUser.role==='accountant');
   renderCTypeSelect();
   renderAccountsTable();
