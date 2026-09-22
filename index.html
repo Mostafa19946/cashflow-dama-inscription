@@ -1033,12 +1033,12 @@ const JSONBIN_IDS = {
   customTypes: '',
 };
 const JSONBIN_DEFAULTS = {
-  commitments: [],
-  inflows: [],
-  transactions: [],
-  accounts: [],
-  users: [{ id: 'admin-default', username: 'admin', password: 'admin123', displayName: 'المدير الأساسي', role: 'admin', approvalRole: '' }],
-  customTypes: [],
+  commitments: { data: [] },
+  inflows: { data: [] },
+  transactions: { data: [] },
+  accounts: { data: [] },
+  users: { data: [{ id: 'admin-default', username: 'admin', password: 'admin123', displayName: 'المدير الأساسي', role: 'admin', approvalRole: '' }] },
+  customTypes: { data: [] },
 };
 async function jsonbinCreate(name, initialData){
   const res = await fetch('https://api.jsonbin.io/v3/b', {
@@ -1085,7 +1085,9 @@ async function loadFromJsonbin(tableKey){
     const binId = JSONBIN_IDS[tableKey];
     if (!binId) return null;
     const record = await jsonbinRead(binId);
-    return Array.isArray(record) ? record : [];
+    if (Array.isArray(record)) return record; // توافق مع أي بيانات قديمة كانت متسجلة كمصفوفة مباشرة
+    if (record && Array.isArray(record.data)) return record.data;
+    return [];
   } catch(e){
     console.error('JSONBin load failed:', tableKey, e);
     lastAirtableError = e;
@@ -1100,7 +1102,7 @@ async function syncTableToJsonbin(tableKey, items){
   jsonbinSyncInFlight[tableKey] = { pending: null };
   setSyncStatus('syncing');
   try {
-    await jsonbinWrite(binId, items);
+    await jsonbinWrite(binId, { data: items });
     const again = jsonbinSyncInFlight[tableKey] && jsonbinSyncInFlight[tableKey].pending;
     delete jsonbinSyncInFlight[tableKey];
     if (again) return syncTableToJsonbin(tableKey, again);
@@ -1638,7 +1640,7 @@ document.getElementById('jsonbinSetupBtn').addEventListener('click', async ()=>{
       else if (key === 'accounts') data = accounts;
       else if (key === 'users') data = users;
       else if (key === 'customTypes') data = customTypes;
-      await jsonbinWrite(ids[key], data);
+      await jsonbinWrite(ids[key], { data });
     }
     const summary = Object.entries(ids).map(([k,v])=>`${k}: ${v}`).join('\n');
     btn.disabled = false;
