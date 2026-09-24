@@ -1140,18 +1140,25 @@ const USE_JSONBIN = Object.values(JSONBIN_IDS).every(v=>v);
 const USE_FIRESTORE = true;
 let firestoreIndex = {};
 async function waitForFirebase(timeoutMs){
-  timeoutMs = timeoutMs || 8000;
+  timeoutMs = timeoutMs || 5000;
   const start = Date.now();
   while (!window.fbReady){
     if (Date.now()-start > timeoutMs) throw new Error('تعذر تحميل مكتبة Firebase (تأكدي من الاتصال بالإنترنت)');
     await new Promise(r=>setTimeout(r, 100));
   }
 }
+function withTimeout(promise, ms, label){
+  ms = ms || 20000;
+  return Promise.race([
+    promise,
+    new Promise((_, reject)=>setTimeout(()=>reject(new Error(`العملية "${label||''}" استغرقت وقت طويل جدًا ولم تكتمل (تأكدي من قوة الاتصال بالإنترنت)`)), ms)),
+  ]);
+}
 async function loadAllFromFirestore(tableKey){
   try {
     await waitForFirebase();
     const { collection, getDocs } = window.fbFns;
-    const snap = await getDocs(collection(window.fbDb, tableKey));
+    const snap = await withTimeout(getDocs(collection(window.fbDb, tableKey)), 15000, 'قراءة '+tableKey);
     const idx = new Map();
     const items = snap.docs.map(d=>{
       const data = d.data();
@@ -1193,7 +1200,7 @@ async function syncTableToFirestore(tableKey, items){
         if (op.type==='set') batch.set(doc(db, tableKey, op.id), op.data);
         else batch.delete(doc(db, tableKey, op.id));
       });
-      await batch.commit();
+      await withTimeout(batch.commit(), 20000, 'حفظ '+tableKey);
       opCount += group.length;
     }
     ops.forEach(op=>{
@@ -1654,7 +1661,7 @@ async function checkFirestoreMigrationStatus(){
   try {
     await waitForFirebase();
     const { collection, getDocs } = window.fbFns;
-    const snap = await getDocs(collection(window.fbDb, 'meta'));
+    const snap = await withTimeout(getDocs(collection(window.fbDb, 'meta')), 10000, 'فحص حالة الترحيل');
     const statusDoc = snap.docs.find(d=>d.id==='status');
     firestoreMigrationDone = !!(statusDoc && statusDoc.data().migrated);
   } catch(e){
@@ -1665,7 +1672,7 @@ async function checkFirestoreMigrationStatus(){
 }
 async function markFirestoreMigrationDone(){
   const { doc, setDoc } = window.fbFns;
-  await setDoc(doc(window.fbDb, 'meta', 'status'), { migrated: true, migratedAt: new Date().toISOString() });
+  await withTimeout(setDoc(doc(window.fbDb, 'meta', 'status'), { migrated: true, migratedAt: new Date().toISOString() }), 10000, 'تسجيل اكتمال الترحيل');
   firestoreMigrationDone = true;
 }
 function loadTable(tableKey){
@@ -4078,17 +4085,23 @@ async function boot(){
   btn.disabled = true;
   btn.textContent = 'جاري الاتصال بقاعدة البيانات...';
   document.getElementById('loginError').textContent = '';
-  if (USE_FIRESTORE) await checkFirestoreMigrationStatus();
-  const remoteUsers = await loadTable('users');
-  if (remoteUsers && remoteUsers.length){
-    users = remoteUsers;
-    cacheLocal('users', users);
-  } else if (remoteUsers === null){
-    const reason = (lastAirtableError && lastAirtableError.message) ? lastAirtableError.message.slice(0,200) : 'غير معروف';
-    document.getElementById('loginError').textContent = `تعذر الاتصال بقاعدة البيانات المشتركة. هيتم استخدام آخر نسخة محفوظة على الجهاز ده لحد ما يرجع الاتصال. [السبب: ${reason}]`;
+  try {
+    if (USE_FIRESTORE) await checkFirestoreMigrationStatus();
+    const remoteUsers = await loadTable('users');
+    if (remoteUsers && remoteUsers.length){
+      users = remoteUsers;
+      cacheLocal('users', users);
+    } else if (remoteUsers === null){
+      const reason = (lastAirtableError && lastAirtableError.message) ? lastAirtableError.message.slice(0,200) : 'غير معروف';
+      document.getElementById('loginError').textContent = `تعذر الاتصال بقاعدة البيانات المشتركة. هيتم استخدام آخر نسخة محفوظة على الجهاز ده لحد ما يرجع الاتصال. [السبب: ${reason}]`;
+    }
+  } catch(e){
+    console.error('boot failed:', e);
+    document.getElementById('loginError').textContent = `حصل خطأ غير متوقع أثناء بدء التشغيل: ${e && e.message ? e.message : e}. هيتم استخدام آخر نسخة محفوظة على الجهاز ده.`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'دخول';
   }
-  btn.disabled = false;
-  btn.textContent = 'دخول';
   tryAutoLogin();
   if (currentUser) await showApp(); else showLogin('');
 }
