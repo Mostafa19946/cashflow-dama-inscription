@@ -1661,7 +1661,7 @@ async function checkFirestoreMigrationStatus(){
   try {
     await waitForFirebase();
     const { collection, getDocs } = window.fbFns;
-    const snap = await withTimeout(getDocs(collection(window.fbDb, 'meta')), 10000, 'فحص حالة الترحيل');
+    const snap = await withTimeout(getDocs(collection(window.fbDb, 'meta')), 20000, 'فحص حالة الترحيل');
     const statusDoc = snap.docs.find(d=>d.id==='status');
     firestoreMigrationDone = !!(statusDoc && statusDoc.data().migrated);
   } catch(e){
@@ -1675,13 +1675,17 @@ async function markFirestoreMigrationDone(){
   await withTimeout(setDoc(doc(window.fbDb, 'meta', 'status'), { migrated: true, migratedAt: new Date().toISOString() }), 10000, 'تسجيل اكتمال الترحيل');
   firestoreMigrationDone = true;
 }
-function loadTable(tableKey){
+function loadTable(tableKey, allowAirtableFallback){
   if (USE_FIRESTORE && firestoreMigrationDone) return loadAllFromFirestore(tableKey);
   if (USE_JSONBIN) return loadFromJsonbin(tableKey);
+  if (USE_FIRESTORE && !allowAirtableFallback) return Promise.resolve(null); // متلجأش لـAirtable في كل دورة تحديث دوري عشان متغرقهوش بالطلبات
   return loadFromAirtable(tableKey);
 }
 async function hydrateAllFromAirtable(silent){
   if (!silent) setSyncStatus('syncing');
+  if (USE_FIRESTORE && !firestoreMigrationDone){
+    await checkFirestoreMigrationStatus(); // محاولة خفيفة دورية للرجوع لـFirestore أول ما يرجع الاتصال
+  }
   const prevCommitments = state.commitments;
   const prevTransactions = state.transactions;
   const [rc, ri, rt, ra, rct] = await Promise.all([
@@ -4087,7 +4091,7 @@ async function boot(){
   document.getElementById('loginError').textContent = '';
   try {
     if (USE_FIRESTORE) await checkFirestoreMigrationStatus();
-    const remoteUsers = await loadTable('users');
+    const remoteUsers = await loadTable('users', true);
     if (remoteUsers && remoteUsers.length){
       users = remoteUsers;
       cacheLocal('users', users);
