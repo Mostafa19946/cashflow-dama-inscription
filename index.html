@@ -1672,7 +1672,12 @@ async function checkFirestoreMigrationStatus(){
 }
 async function markFirestoreMigrationDone(){
   const { doc, setDoc } = window.fbFns;
-  await withTimeout(setDoc(doc(window.fbDb, 'meta', 'status'), { migrated: true, migratedAt: new Date().toISOString() }), 10000, 'تسجيل اكتمال الترحيل');
+  try {
+    await withTimeout(setDoc(doc(window.fbDb, 'meta', 'status'), { migrated: true, migratedAt: new Date().toISOString() }), 25000, 'تسجيل اكتمال الترحيل');
+  } catch(e){
+    // محاولة تانية سريعة قبل ما نستسلم — البيانات الأساسية اتنقلت بالفعل، دي خطوة صغيرة بس
+    await withTimeout(setDoc(doc(window.fbDb, 'meta', 'status'), { migrated: true, migratedAt: new Date().toISOString() }), 25000, 'تسجيل اكتمال الترحيل (محاولة ثانية)');
+  }
   firestoreMigrationDone = true;
 }
 function loadTable(tableKey, allowAirtableFallback){
