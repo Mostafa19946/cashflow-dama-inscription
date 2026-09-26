@@ -6,7 +6,7 @@
 <title>لوحة الخزينة — الالتزامات والتدفقات النقدية</title>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-  import { getFirestore, collection, doc, setDoc, deleteDoc, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+  import { initializeFirestore, collection, doc, setDoc, deleteDoc, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
   const firebaseConfig = {
     apiKey: "AIzaSyCOvH6R5QoTugA5oKRZaixPwS-Wb4MdV9I",
     authDomain: "cashflow-dama.firebaseapp.com",
@@ -16,7 +16,11 @@
     appId: "1:726800471749:web:57762832478c5a2f4142ac",
   };
   const fbApp = initializeApp(firebaseConfig);
-  window.fbDb = getFirestore(fbApp);
+  // إجبار استخدام long-polling بدل WebSocket/gRPC-web، عشان يشتغل حتى مع الشبكات اللي بترفض نوع الاتصال الافتراضي
+  window.fbDb = initializeFirestore(fbApp, {
+    experimentalForceLongPolling: true,
+    useFetchStreams: false,
+  });
   window.fbFns = { collection, doc, setDoc, deleteDoc, getDocs, writeBatch };
   window.fbReady = true;
 </script>
