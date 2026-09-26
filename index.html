@@ -1194,14 +1194,18 @@ async function syncTableToFirestore(tableKey, items){
       if (idx.get(id) !== json){ ops.push({type:'set', id, data, json}); }
     });
     idx.forEach((_, id)=>{ if (!currentIds.has(id)) ops.push({type:'delete', id}); });
-    for (const group of chunkArr(ops, 450)){ // حد Firestore الأقصى 500 عملية لكل batch
+    const groups = chunkArr(ops, 25); // دفعات صغيرة عشان تخلص بسرعة حتى مع اتصال ضعيف
+    let doneGroups = 0;
+    for (const group of groups){
       const batch = writeBatch(db);
       group.forEach(op=>{
         if (op.type==='set') batch.set(doc(db, tableKey, op.id), op.data);
         else batch.delete(doc(db, tableKey, op.id));
       });
-      await withTimeout(batch.commit(), 20000, 'حفظ '+tableKey);
+      await withTimeout(batch.commit(), 25000, 'حفظ '+tableKey);
       opCount += group.length;
+      doneGroups++;
+      if (groups.length>1) showToast(`⏳ جاري حفظ ${TABLE_LABELS_AR[tableKey]||tableKey}... (${doneGroups}/${groups.length})`, 'info');
     }
     ops.forEach(op=>{
       if (op.type==='set') idx.set(op.id, op.json);
@@ -1658,12 +1662,16 @@ function notifyRemoteChanges(oldCommitments, newCommitments, oldTransactions, ne
 
 let firestoreMigrationDone = null; // null = لسه معرفناش، true/false بعد الفحص
 async function checkFirestoreMigrationStatus(){
+  // لو سبق وعرفنا إن الترحيل خلص على الجهاز ده، منحتاجش نتأكد تاني من السيرفر كل مرة
+  if (localStorage.getItem('cf_firestore_migrated') === 'true'){
+    firestoreMigrationDone = true;
+    return true;
+  }
   try {
     await waitForFirebase();
-    const { collection, getDocs } = window.fbFns;
-    const snap = await withTimeout(getDocs(collection(window.fbDb, 'meta')), 20000, 'فحص حالة الترحيل');
-    const statusDoc = snap.docs.find(d=>d.id==='status');
-    firestoreMigrationDone = !!(statusDoc && statusDoc.data().migrated);
+    const remoteUsers = await withTimeout(loadAllFromFirestore('users'), 20000, 'التحقق من وجود بيانات على Firebase');
+    firestoreMigrationDone = !!(remoteUsers && remoteUsers.length > 0);
+    if (firestoreMigrationDone) localStorage.setItem('cf_firestore_migrated', 'true');
   } catch(e){
     console.error('تعذر التحقق من حالة الترحيل:', e);
     firestoreMigrationDone = false;
@@ -1671,13 +1679,7 @@ async function checkFirestoreMigrationStatus(){
   return firestoreMigrationDone;
 }
 async function markFirestoreMigrationDone(){
-  const { doc, setDoc } = window.fbFns;
-  try {
-    await withTimeout(setDoc(doc(window.fbDb, 'meta', 'status'), { migrated: true, migratedAt: new Date().toISOString() }), 25000, 'تسجيل اكتمال الترحيل');
-  } catch(e){
-    // محاولة تانية سريعة قبل ما نستسلم — البيانات الأساسية اتنقلت بالفعل، دي خطوة صغيرة بس
-    await withTimeout(setDoc(doc(window.fbDb, 'meta', 'status'), { migrated: true, migratedAt: new Date().toISOString() }), 25000, 'تسجيل اكتمال الترحيل (محاولة ثانية)');
-  }
+  localStorage.setItem('cf_firestore_migrated', 'true');
   firestoreMigrationDone = true;
 }
 function loadTable(tableKey, allowAirtableFallback){
