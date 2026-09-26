@@ -329,6 +329,7 @@ body.role-accountant .approval-check {
         <span>مسجل دخول: <b id="currentUserName">—</b></span>
         <span class="role-tag" id="currentUserRoleTag">—</span>
         <button class="logout-btn hidden" id="jsonbinSetupBtn" style="background:var(--brass); color:#16211D;">🔥 ترحيل البيانات لـ Firebase</button>
+        <button class="logout-btn hidden" id="resetMigrationBtn" style="background:var(--deficit-dim); color:var(--deficit); font-size:10.5px;">🔄 إعادة ضبط حالة الترحيل</button>
         <button class="logout-btn" id="openProfileBtn">✍️ توقيعي</button>
         <button class="logout-btn" id="logoutBtn">تسجيل خروج</button>
       </div>
@@ -1680,8 +1681,12 @@ async function checkFirestoreMigrationStatus(){
   }
   try {
     await waitForFirebase();
-    const remoteUsers = await withTimeout(loadAllFromFirestore('users'), 20000, 'التحقق من وجود بيانات على Firebase');
-    firestoreMigrationDone = !!(remoteUsers && remoteUsers.length > 0);
+    const [remoteUsers, remoteCommits] = await Promise.all([
+      withTimeout(loadAllFromFirestore('users'), 20000, 'التحقق من وجود بيانات على Firebase'),
+      withTimeout(loadAllFromFirestore('commitments'), 20000, 'التحقق من وجود بيانات على Firebase'),
+    ]);
+    // لازم يكون فيه مستخدمين والتزامات مع بعض عشان نعتبر الترحيل خلص فعلاً (مش بس جزء منه)
+    firestoreMigrationDone = !!(remoteUsers && remoteUsers.length > 0 && remoteCommits && remoteCommits.length > 0);
     if (firestoreMigrationDone) localStorage.setItem('cf_firestore_migrated', 'true');
   } catch(e){
     console.error('تعذر التحقق من حالة الترحيل:', e);
@@ -1784,6 +1789,13 @@ function loadUserSignatureLocal(userId){
 function saveUserSignatureLocal(userId, dataUrl){
   try { localStorage.setItem('cf_signature_'+userId, dataUrl||''); } catch(e){ console.error(e); }
 }
+document.getElementById('resetMigrationBtn').addEventListener('click', ()=>{
+  if (!confirm('هيتم اعتبار الترحيل لسه ماخلصش، والبرنامج هيرجع يجيب بياناتك من Airtable لحد ما تعملي ترحيل جديد. البيانات نفسها مش هتتمسح. تكملي؟')) return;
+  localStorage.removeItem('cf_firestore_migrated');
+  firestoreMigrationDone = false;
+  alert('تم. هيتم عمل تحديث للصفحة دلوقتي.');
+  location.reload();
+});
 document.getElementById('jsonbinSetupBtn').addEventListener('click', async ()=>{
   if (!confirm('هيتم نقل كل بياناتك الحالية (الالتزامات، التحصيلات، الحسابات، المستخدمين...) لقاعدة Firebase الجديدة. الخطوة دي بتتعمل مرة واحدة بس، ومتاخدش وقت طويل. تكملي؟')) return;
   const btn = document.getElementById('jsonbinSetupBtn');
@@ -1847,6 +1859,7 @@ async function showApp(){
   roleTag.textContent = currentUser.role==='admin' ? 'أدمن' : currentUser.role==='accountant' ? 'محاسب' : (roleObj ? roleObj.label : 'مستخدم');
   document.getElementById('usersTabBtn').classList.toggle('hidden', currentUser.role!=='admin');
   document.getElementById('jsonbinSetupBtn').classList.toggle('hidden', !(currentUser.role==='admin' && USE_FIRESTORE && !firestoreMigrationDone));
+  document.getElementById('resetMigrationBtn').classList.toggle('hidden', !(currentUser.role==='admin' && USE_FIRESTORE));
   document.body.classList.toggle('role-accountant', currentUser.role==='accountant');
   renderCTypeSelect();
   renderAccountsTable();
