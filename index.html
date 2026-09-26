@@ -1142,7 +1142,7 @@ async function syncTableToJsonbin(tableKey, items){
 const USE_JSONBIN = Object.values(JSONBIN_IDS).every(v=>v);
 
 // ---- الإعداد النهائي: Firebase Firestore (الأدق والأوثق) ----
-const USE_FIRESTORE = true;
+const USE_FIRESTORE = false; // متعطّل مؤقتًا — البرنامج شغال بثبات على Airtable. ممكن نرجّعه true تاني في أي وقت لو حبيتي نكمّل الترحيل.
 let firestoreIndex = {};
 async function waitForFirebase(timeoutMs){
   timeoutMs = timeoutMs || 5000;
