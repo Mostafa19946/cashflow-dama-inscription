@@ -1180,6 +1180,13 @@ async function loadAllFromFirestore(tableKey){
 let firestoreSyncInFlight = {};
 async function syncTableToFirestore(tableKey, items){
   if (firestoreSyncInFlight[tableKey]) { firestoreSyncInFlight[tableKey].pending = items; return; }
+  // حماية أساسية: لو الجدول عنده بيانات كتير قبل كده، ووصلنا مصفوفة فاضية فجأة، ده على الأغلب خطأ مش حذف حقيقي مقصود
+  const existingIdx = firestoreIndex[tableKey];
+  if ((!items || items.length===0) && existingIdx && existingIdx.size > 5){
+    console.error(`رفضنا نمسح كل بيانات ${tableKey} (كانت ${existingIdx.size} صف وجالنا صفر) — ده غالبًا خطأ مش حذف مقصود.`);
+    showToast(`⚠️ تم تجاهل عملية كانت هتمسح كل بيانات ${TABLE_LABELS_AR[tableKey]||tableKey} (${existingIdx.size} صف) لحمايتها. لو ده مقصود فعلاً، امسحي العناصر واحد واحد.`, 'error');
+    return;
+  }
   firestoreSyncInFlight[tableKey] = { pending: null };
   setSyncStatus('syncing');
   try {
