@@ -328,7 +328,7 @@ body.role-accountant .approval-check {
         <span id="syncStatus" style="font-size:11px;">🔄 بيتزامن...</span>
         <span>مسجل دخول: <b id="currentUserName">—</b></span>
         <span class="role-tag" id="currentUserRoleTag">—</span>
-        <button class="logout-btn hidden" id="jsonbinSetupBtn" style="background:var(--brass); color:#16211D;">🔥 ترحيل البيانات لـ Firebase</button>
+        <button class="logout-btn hidden" id="jsonbinSetupBtn" style="background:var(--brass); color:#16211D;">🚀 ترحيل البيانات لـ Supabase</button>
         <button class="logout-btn hidden" id="resetMigrationBtn" style="background:var(--deficit-dim); color:var(--deficit); font-size:10.5px;">🔄 إعادة ضبط حالة الترحيل</button>
         <button class="logout-btn" id="openProfileBtn">✍️ توقيعي</button>
         <button class="logout-btn" id="logoutBtn">تسجيل خروج</button>
@@ -1143,6 +1143,125 @@ const USE_JSONBIN = Object.values(JSONBIN_IDS).every(v=>v);
 
 // ---- الإعداد النهائي: Firebase Firestore (الأدق والأوثق) ----
 const USE_FIRESTORE = false; // متعطّل مؤقتًا — البرنامج شغال بثبات على Airtable. ممكن نرجّعه true تاني في أي وقت لو حبيتي نكمّل الترحيل.
+
+// ---- الإعداد النهائي الجديد: Supabase (أبسط وأوثق، ومصمم للاتصال المباشر من المتصفح) ----
+const SUPABASE_URL = 'https://jfbkonftfgqmznuraazt.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_rggI1_G3xk_usAOGVjKngg_7nBgiN4Z';
+const USE_SUPABASE = true;
+let supabaseMigrationDone = false;
+
+async function supabaseApi(method, table, qs, body, extraHeaders){
+  const url = `${SUPABASE_URL}/rest/v1/${table}${qs||''}`;
+  const headers = Object.assign({
+    'apikey': SUPABASE_KEY,
+    'Authorization': 'Bearer ' + SUPABASE_KEY,
+    'Content-Type': 'application/json',
+  }, extraHeaders||{});
+  const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  if (!res.ok){
+    const t = await res.text();
+    throw new Error('Supabase '+method+' '+table+' failed: '+res.status+' '+t);
+  }
+  if (res.status === 204) return null;
+  const txt = await res.text();
+  return txt ? JSON.parse(txt) : null;
+}
+let supabaseIndex = {};
+async function loadAllFromSupabase(tableKey){
+  try {
+    const rows = await withTimeout(supabaseApi('GET', tableKey.toLowerCase(), '?select=*'), 20000, 'قراءة '+tableKey);
+    const idx = new Map();
+    const items = (rows||[]).map(r=>{
+      idx.set(r.id, JSON.stringify(r.data));
+      return tableKey==='customTypes' ? r.data.name : r.data;
+    });
+    supabaseIndex[tableKey] = idx;
+    return items;
+  } catch(e){
+    console.error('Supabase load failed:', tableKey, e);
+    lastAirtableError = e;
+    return null;
+  }
+}
+let supabaseSyncInFlight = {};
+async function syncTableToSupabase(tableKey, items){
+  if (supabaseSyncInFlight[tableKey]) { supabaseSyncInFlight[tableKey].pending = items; return; }
+  const existingIdx = supabaseIndex[tableKey];
+  if ((!items || items.length===0) && existingIdx && existingIdx.size > 5){
+    console.error(`رفضنا نمسح كل بيانات ${tableKey} (كانت ${existingIdx.size} صف وجالنا صفر) — ده غالبًا خطأ مش حذف مقصود.`);
+    showToast(`⚠️ تم تجاهل عملية كانت هتمسح كل بيانات ${TABLE_LABELS_AR[tableKey]||tableKey} (${existingIdx.size} صف) لحمايتها.`, 'error');
+    return;
+  }
+  supabaseSyncInFlight[tableKey] = { pending: null };
+  setSyncStatus('syncing');
+  try {
+    const table = tableKey.toLowerCase();
+    const idx = supabaseIndex[tableKey] || new Map();
+    const currentIds = new Set();
+    const upserts = [];
+    items.forEach(it=>{
+      const id = String(tableKey==='customTypes' ? it : it.id);
+      currentIds.add(id);
+      const data = tableKey==='customTypes' ? { name: it } : it;
+      const json = JSON.stringify(data);
+      if (idx.get(id) !== json) upserts.push({ id, data, json });
+    });
+    const toDelete = [];
+    idx.forEach((_, id)=>{ if (!currentIds.has(id)) toDelete.push(id); });
+
+    for (const group of chunkArr(upserts, 200)){
+      await withTimeout(supabaseApi('POST', table, '', group.map(u=>({id:u.id, data:u.data})), { 'Prefer': 'resolution=merge-duplicates,return=minimal' }), 25000, 'حفظ '+tableKey);
+      group.forEach(u=>idx.set(u.id, u.json));
+    }
+    if (toDelete.length){
+      for (const group of chunkArr(toDelete, 100)){
+        await withTimeout(supabaseApi('DELETE', table, '?id=in.('+group.map(encodeURIComponent).join(',')+')'), 20000, 'حذف من '+tableKey);
+        group.forEach(id=>idx.delete(id));
+      }
+    }
+    supabaseIndex[tableKey] = idx;
+    const again = supabaseSyncInFlight[tableKey] && supabaseSyncInFlight[tableKey].pending;
+    delete supabaseSyncInFlight[tableKey];
+    if (again) return syncTableToSupabase(tableKey, again);
+    setSyncStatus('ok');
+    if (upserts.length || toDelete.length) showToast(`✅ تم حفظ التغيير في ${TABLE_LABELS_AR[tableKey]||tableKey}`, 'success');
+  } catch(e){
+    console.error('Supabase sync failed', tableKey, e);
+    delete supabaseSyncInFlight[tableKey];
+    setSyncStatus('error');
+    const reason = (e && e.message) ? e.message.slice(0,180) : '';
+    showToast(`❌ فشل حفظ التغيير في ${TABLE_LABELS_AR[tableKey]||tableKey}!${reason?(' تفاصيل: '+reason):''}`, 'error');
+  }
+}
+async function checkSupabaseMigrationStatus(){
+  if (localStorage.getItem('cf_supabase_migrated') === 'true'){
+    supabaseMigrationDone = true;
+    return true;
+  }
+  try {
+    const [remoteUsers, remoteCommits] = await Promise.all([
+      loadAllFromSupabase('users'),
+      loadAllFromSupabase('commitments'),
+    ]);
+    supabaseMigrationDone = !!(remoteUsers && remoteUsers.length > 0 && remoteCommits && remoteCommits.length > 0);
+    if (supabaseMigrationDone) localStorage.setItem('cf_supabase_migrated', 'true');
+  } catch(e){
+    console.error('تعذر التحقق من حالة الترحيل لـ Supabase:', e);
+    supabaseMigrationDone = false;
+  }
+  return supabaseMigrationDone;
+}
+async function migrateAllToSupabase(){
+  await syncTableToSupabase('commitments', state.commitments);
+  await syncTableToSupabase('inflows', state.inflows);
+  await syncTableToSupabase('transactions', state.transactions);
+  await syncTableToSupabase('accounts', accounts);
+  await syncTableToSupabase('users', users);
+  await syncTableToSupabase('customTypes', customTypes);
+  localStorage.setItem('cf_supabase_migrated', 'true');
+  supabaseMigrationDone = true;
+}
+
 let firestoreIndex = {};
 async function waitForFirebase(timeoutMs){
   timeoutMs = timeoutMs || 5000;
@@ -1578,7 +1697,8 @@ function setSyncStatus(status){
 
 function save(key, val){
   cacheLocal(key, val);
-  if (USE_FIRESTORE && firestoreMigrationDone) syncTableToFirestore(key, val);
+  if (USE_SUPABASE && supabaseMigrationDone) syncTableToSupabase(key, val);
+  else if (USE_FIRESTORE && firestoreMigrationDone) syncTableToFirestore(key, val);
   else if (USE_JSONBIN) syncTableToJsonbin(key, val);
   else syncTableToAirtable(key, val);
 }
@@ -1699,13 +1819,17 @@ async function markFirestoreMigrationDone(){
   firestoreMigrationDone = true;
 }
 function loadTable(tableKey, allowAirtableFallback){
+  if (USE_SUPABASE && supabaseMigrationDone) return loadAllFromSupabase(tableKey);
   if (USE_FIRESTORE && firestoreMigrationDone) return loadAllFromFirestore(tableKey);
   if (USE_JSONBIN) return loadFromJsonbin(tableKey);
-  if (USE_FIRESTORE && !allowAirtableFallback) return Promise.resolve(null); // متلجأش لـAirtable في كل دورة تحديث دوري عشان متغرقهوش بالطلبات
+  if ((USE_SUPABASE || USE_FIRESTORE) && !allowAirtableFallback) return Promise.resolve(null); // متلجأش لـAirtable في كل دورة تحديث دوري عشان متغرقهوش بالطلبات
   return loadFromAirtable(tableKey);
 }
 async function hydrateAllFromAirtable(silent){
   if (!silent) setSyncStatus('syncing');
+  if (USE_SUPABASE && !supabaseMigrationDone){
+    await checkSupabaseMigrationStatus();
+  }
   if (USE_FIRESTORE && !firestoreMigrationDone){
     await checkFirestoreMigrationStatus(); // محاولة خفيفة دورية للرجوع لـFirestore أول ما يرجع الاتصال
   }
@@ -1792,26 +1916,27 @@ function saveUserSignatureLocal(userId, dataUrl){
 document.getElementById('resetMigrationBtn').addEventListener('click', ()=>{
   if (!confirm('هيتم اعتبار الترحيل لسه ماخلصش، والبرنامج هيرجع يجيب بياناتك من Airtable لحد ما تعملي ترحيل جديد. البيانات نفسها مش هتتمسح. تكملي؟')) return;
   localStorage.removeItem('cf_firestore_migrated');
+  localStorage.removeItem('cf_supabase_migrated');
   firestoreMigrationDone = false;
+  supabaseMigrationDone = false;
   alert('تم. هيتم عمل تحديث للصفحة دلوقتي.');
   location.reload();
 });
 document.getElementById('jsonbinSetupBtn').addEventListener('click', async ()=>{
-  if (!confirm('هيتم نقل كل بياناتك الحالية (الالتزامات، التحصيلات، الحسابات، المستخدمين...) لقاعدة Firebase الجديدة. الخطوة دي بتتعمل مرة واحدة بس، ومتاخدش وقت طويل. تكملي؟')) return;
+  if (!confirm('هيتم نقل كل بياناتك الحالية (الالتزامات، التحصيلات، الحسابات، المستخدمين...) لقاعدة Supabase الجديدة. الخطوة دي بتتعمل مرة واحدة بس، ومتاخدش وقت طويل. تكملي؟')) return;
   const btn = document.getElementById('jsonbinSetupBtn');
   btn.disabled = true;
   btn.textContent = '⏳ جاري الترحيل...';
   try {
-    showToast('🔥 جاري نقل كل البيانات لـ Firebase...', 'info');
-    await migrateAllToFirestore();
-    await markFirestoreMigrationDone();
+    showToast('🚀 جاري نقل كل البيانات لـ Supabase...', 'info');
+    await migrateAllToSupabase();
     btn.classList.add('hidden');
-    alert('✅ تم نقل كل البيانات لـ Firebase بنجاح!\n\nمن دلوقتي البرنامج بيشتغل بالكامل على القاعدة الجديدة. اعملي تحديث للصفحة (F5) دلوقتي.');
+    alert('✅ تم نقل كل البيانات لـ Supabase بنجاح!\n\nمن دلوقتي البرنامج بيشتغل بالكامل على القاعدة الجديدة. اعملي تحديث للصفحة (F5) دلوقتي.');
     location.reload();
   } catch(e){
     console.error(e);
     btn.disabled = false;
-    btn.textContent = '🔥 ترحيل البيانات لـ Firebase';
+    btn.textContent = '🚀 ترحيل البيانات لـ Supabase';
     alert('❌ حصل خطأ أثناء الترحيل: ' + (e && e.message ? e.message : 'خطأ غير معروف') + '\n\nجرّبي تاني، أو ابعتيلي وصف الخطأ ده.');
   }
 });
@@ -1858,8 +1983,8 @@ async function showApp(){
   const roleObj = APPROVAL_ROLES.find(r=>r.key===currentUser.approvalRole);
   roleTag.textContent = currentUser.role==='admin' ? 'أدمن' : currentUser.role==='accountant' ? 'محاسب' : (roleObj ? roleObj.label : 'مستخدم');
   document.getElementById('usersTabBtn').classList.toggle('hidden', currentUser.role!=='admin');
-  document.getElementById('jsonbinSetupBtn').classList.toggle('hidden', !(currentUser.role==='admin' && USE_FIRESTORE && !firestoreMigrationDone));
-  document.getElementById('resetMigrationBtn').classList.toggle('hidden', !(currentUser.role==='admin' && USE_FIRESTORE));
+  document.getElementById('jsonbinSetupBtn').classList.toggle('hidden', !(currentUser.role==='admin' && USE_SUPABASE && !supabaseMigrationDone));
+  document.getElementById('resetMigrationBtn').classList.toggle('hidden', !(currentUser.role==='admin' && (USE_SUPABASE || USE_FIRESTORE)));
   document.body.classList.toggle('role-accountant', currentUser.role==='accountant');
   renderCTypeSelect();
   renderAccountsTable();
@@ -4121,6 +4246,7 @@ async function boot(){
   btn.textContent = 'جاري الاتصال بقاعدة البيانات...';
   document.getElementById('loginError').textContent = '';
   try {
+    if (USE_SUPABASE) await checkSupabaseMigrationStatus();
     if (USE_FIRESTORE) await checkFirestoreMigrationStatus();
     const remoteUsers = await loadTable('users', true);
     if (remoteUsers && remoteUsers.length){
